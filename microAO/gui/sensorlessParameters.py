@@ -5,6 +5,10 @@ import dataclasses
 
 from microAO.aoMetrics import metric_names
 from microAO.aoRoutines import ConventionalParamsMode
+from microAO.gui.roiSelector import ROISelectionDialog
+from cockpit.gui.camera.viewPanel import ViewPanel
+from cockpit import depot
+
 
 class ConventionalParametersDialog(wx.Dialog):
     def __init__(self, parent):
@@ -168,6 +172,13 @@ class ConventionalParametersDialog(wx.Dialog):
         sizer_stdbuttons.Add(button_ok)
         button_cancel = wx.Button(self, wx.ID_CANCEL)
         sizer_stdbuttons.Add(button_cancel)
+
+
+        self._button_roi = wx.Button(self, label="Select AO ROI")
+        self._button_roi.Bind(wx.EVT_BUTTON, self._on_roi_button_click)
+        sizer_stdbuttons.Add(self._button_roi)
+        self._roi=None
+
         sizer_stdbuttons.Realize()
 
         # Finalise layout
@@ -175,6 +186,8 @@ class ConventionalParametersDialog(wx.Dialog):
         sizer.Add(panel, 1, wx.EXPAND)
         sizer.Add(sizer_stdbuttons, 0, wx.ALL, 5)
         self.SetSizerAndFit(sizer)
+        
+
 
     def _params2text(self, params):
         mode_sets = []
@@ -410,6 +423,7 @@ class ConventionalParametersDialog(wx.Dialog):
                     )
                 )
         # Update the sensorless AO parameters
+        self._device.sensorless_params["sensorless_roi"] = self._roi
         self._device.sensorless_params["num_reps"] = widgets_data[0][2]
         self._device.sensorless_params["modes"] = mode_params
         self._device.sensorless_params["NA"] = widgets_data[1][2]
@@ -421,6 +435,21 @@ class ConventionalParametersDialog(wx.Dialog):
         )
         # Propagate event
         event.Skip()
+
+    def _on_roi_button_click(self, event):
+        dialog = ROISelectionDialog(self)
+        result = dialog.ShowModal()  
+        if result == wx.ID_OK:
+            roi = dialog.getSelectedROI()  
+            if roi:
+                print(f"SET AO ROI: {roi}")
+                self._roi=roi
+        else:
+            pass
+     
+        dialog.Destroy()
+
+
 
 routine_dialogs = {
     'conventional': ConventionalParametersDialog,

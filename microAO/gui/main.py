@@ -1076,7 +1076,7 @@ class MicroscopeAOCompositeDevicePanel(wx.Panel):
         del event
 
         # Show loader dialog and get filepath + flat type
-        with _DMFlatLoaderSaver(self, title="Load DM flat") as dlg:
+        with _DMFlatLoaderSaver(self, title="Save DM flat") as dlg:
             if dlg.ShowModal() == wx.ID_OK:
                 flat_path = dlg.GetPath()
                 flat_type = dlg.GetType()

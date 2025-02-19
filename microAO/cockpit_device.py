@@ -31,7 +31,6 @@ mirror as currently mounted on DeepSIM in Oxford.
 import os
 import time
 import queue
-
 import json
 import decimal
 import dataclasses
@@ -715,11 +714,19 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
         if self._abort["sensorless"]:
             self.correctSensorlessAbort()
             return
+        
+        
+        #ANDREI'S NOTE: This where I can come in and crop the image according to a ROI
+        # print(self.sensorless_params['sensorless_roi'])
+        # if 'sensorless_roi' in self.sensorless_params and self.sensorless_params['sensorless_roi']:
+        #     x, y, w, h = self.sensorless_params['sensorless_roi']
+        #     image = image[y : y + h, x : x + w]
 
         # Add the image to the stack and request its eventual processing
         self.sensorless_data["image_stack"].append(image)
         wx.CallAfter(self.correctSensorlessProcessing)
 
+    #ANDREI'S NOTE: This is where sensorless AO gets called in the cockpit device
     def correctSensorlessProcessing(self):
         # Perform processing of image through AO routine
         results = self._sensorless_routine.process(self.sensorless_data)
