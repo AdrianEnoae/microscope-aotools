@@ -1,0 +1,6 @@
+numpy
+scipy
+scikit-image
+aotools
+Pyro4
+microscope>=0.6.0
