@@ -717,10 +717,9 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
         
         
         #ANDREI'S NOTE: This where I can come in and crop the image according to a ROI
-        # print(self.sensorless_params['sensorless_roi'])
-        # if 'sensorless_roi' in self.sensorless_params and self.sensorless_params['sensorless_roi']:
-        #     x, y, w, h = self.sensorless_params['sensorless_roi']
-        #     image = image[y : y + h, x : x + w]
+        if 'sensorless_roi' in self.sensorless_params and self.sensorless_params['sensorless_roi']:
+            x, y, w, h = self.sensorless_params['sensorless_roi']
+            image = image[y : y + h, x : x + w]
 
         # Add the image to the stack and request its eventual processing
         self.sensorless_data["image_stack"].append(image)

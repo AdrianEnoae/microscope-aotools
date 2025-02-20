@@ -4,6 +4,8 @@ from microAO.gui.correctionFitting import CorrectionFittingFrame
 from microAO.gui.sensorlessViewer import ConventionalResultsViewer
 from microAO.gui.sensorlessParameters import routine_dialogs
 from microAO.gui.DMViewer import DMViewer
+from microAO.gui.roiSelector import ROISelectionDialog
+
 import microAO.events
 import microAO.aoAlg
 from microAO.aoRoutines import routines
@@ -630,6 +632,10 @@ class MicroscopeAOCompositeDevicePanel(wx.Panel):
         metricSelectButton = wx.Button(panel_AO, label="Set sensorless routine")
         metricSelectButton.Bind(wx.EVT_BUTTON, self.OnSetRoutine)
 
+        # Button to set sensorless AO
+        roiSelectButton = wx.Button(panel_AO, label="Set sensorless ROI")
+        roiSelectButton.Bind(wx.EVT_BUTTON, self.OnSetSensorlessROI)
+
         # Button to set sensorless correction parameters
         sensorlessParametersButton = wx.Button(panel_AO, label="Set sensorless parameters")
         sensorlessParametersButton.Bind(wx.EVT_BUTTON, self.OnSetSensorlessParameters)
@@ -681,6 +687,7 @@ class MicroscopeAOCompositeDevicePanel(wx.Panel):
             resetButton,
             applySysFlat,
             metricSelectButton,
+            roiSelectButton,
             sensorlessParametersButton,
             sensorlessAOButton,
             correctionFittingButton
@@ -1246,6 +1253,19 @@ class MicroscopeAOCompositeDevicePanel(wx.Panel):
             logger.log.info("Set sensorless AO routine to: {}".format(routine))
         
         dlg.Destroy()
+
+    def OnSetSensorlessROI(self, event: wx.CommandEvent)-> None:
+        del event
+        dialog = ROISelectionDialog(self)
+        result = dialog.ShowModal()  
+        if result == wx.ID_OK:
+            roi = dialog.getSelectedROI()  
+            if roi:
+                print(f"SET AO ROI: {roi}")
+                self._device.sensorless_params['sensorless_roi']=roi
+        else:
+                pass
+        dialog.Destroy()
 
     def OnSetSensorlessParameters(self, _) -> None:
         routine = self._device.sensorless_params['routine']
