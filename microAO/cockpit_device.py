@@ -718,8 +718,18 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
         
         #ANDREI'S NOTE: This where I can come in and crop the image according to a ROI
         if 'sensorless_roi' in self.sensorless_params and self.sensorless_params['sensorless_roi']:
-            x, y, w, h = self.sensorless_params['sensorless_roi']
-            image = image[y : y + h, x : x + w]
+            x, y, w, h=self.sensorless_params['sensorless_roi']
+            #Update this to handle multiple cameras
+            camera = depot.getActiveCameras()[0]
+
+            cx, cy, cw, ch=camera.getROI()
+            if x>=cx and y>=cy and (x+w)<=(cx+cw) and (y+h)<=(cy+ch):
+                x=x-cx
+                y=y-cy
+                image = image[y : y + h, x : x + w]
+            else:
+                print('Sensorless ROI outside of camera ROI, please reselect')
+                self.sensorless_params['sensorless_roi']=None
 
         # Add the image to the stack and request its eventual processing
         self.sensorless_data["image_stack"].append(image)
@@ -830,6 +840,9 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
                 wx.GetApp().Config["log"].getpath("dir"),
                 "sensorless_AO_" + ts + ".h5",
             )
+
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+
 
         # Write data to file
         with h5py.File(filepath, "w") as f:

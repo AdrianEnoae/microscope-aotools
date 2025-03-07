@@ -3,12 +3,11 @@ from dataclasses import dataclass
 import typing
 import numpy as np
 from datetime import datetime
-
-import tensorflow as tf
-
+import keras as k
 from microAO.aoMetrics import metric_function
 from microAO.aoAlg import AdaptiveOpticsFunctions
-
+import tifffile as tiff
+import os
 from OTF_gen import Generate_OTF
 
 @dataclass
@@ -263,7 +262,7 @@ class MLRoutine(Routine):
         # Merge additional data (note in-place merge of mutable dict)
         sensorless_data.update(additional_data)
 
-        self.model = tf.keras.models.load_model('C:/microscope-aotools/models/cdd_L1L2_var_widefield_3layer_0_8_rmse_mode8_bias_10_ast_pnve_10_12_input_2_batch32s32_savedmodel.h5', compile=False)
+        self.model = k.models.load_model('C:/microscope-aotools/models/cdd_L1L2_var_widefield_3layer_0_8_rmse_mode8_bias_10_ast_pnve_10_12_input_2_batch32s32_savedmodel.h5', compile=False)
 
         # Define the first correction to apply
         self.initial_modes = sensorless_data["corrections"].copy()
@@ -394,7 +393,7 @@ class MLRoutine2(Routine):
         # Merge additional data (note in-place merge of mutable dict)
         sensorless_data.update(additional_data)
 
-        self.model = tf.keras.models.load_model('C:/microscope-aotools/models/cdd_L1L2_var_widefield_3layer_0_8_rmse_mode8_bias_10_8modes_pnve_10_12_input_16_batch32s32_savedmodel.h5', compile=False)
+        self.model = k.models.load_model('C:/microscope-aotools/models/cdd_L1L2_var_widefield_3layer_0_8_rmse_mode8_bias_10_8modes_pnve_10_12_input_16_batch32s32_savedmodel.h5', compile=False)
 
         self.trial_modes = [4,5,6,7,8,9,10,21]
 
@@ -543,7 +542,7 @@ class MLRoutineWidefieldClarity(Routine):
         # Merge additional data (note in-place merge of mutable dict)
         sensorless_data.update(additional_data)
 
-        self.model = tf.keras.models.load_model('C:/microscope-aotools/models/cdd_L1L2_var_clarity_widefield_3layer_0_8_rmse_mode8_bias_10_ast_pnve_10_12_input_2_batch32s32_savedmodel.h5', compile=False)
+        self.model = k.models.load_model('C:/microscope-aotools/models/cdd_L1L2_var_clarity_widefield_3layer_0_8_rmse_mode8_bias_10_ast_pnve_10_12_input_2_batch32s32_savedmodel.h5', compile=False)
 
         self.trial_modes = [4,5,6,7,8,9,10,21]
 
@@ -586,7 +585,6 @@ class MLRoutineWidefieldClarity(Routine):
         mode_index = sensorless_data['mode_index']
 
         total_images = self.sensorless_params['n_reps'] * 17+1 
-
         if image_index % 17 == 0 :
             # Grab last 16 images
             images = sensorless_data['image_stack'][image_index-16:image_index]
@@ -594,7 +592,19 @@ class MLRoutineWidefieldClarity(Routine):
 
             # print('image shape:',image_shape)
             images_converted = np.array([image.astype('float') for image in images])
-            images_converted = images_converted[:,128:384,128:384]
+        
+            _, h, w = images_converted.shape
+            start_y = (h - 256) // 2
+            start_x = (w - 256) // 2
+            images_converted = images_converted[:, start_y:start_y+256, start_x:start_x+256]
+
+            desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+            output_folder = os.path.join(desktop_path, "MLAO Image")
+            os.makedirs(output_folder, exist_ok=True)
+            output_path = os.path.join(output_folder, "MLAO_Stack.tif")
+            tiff.imwrite(output_path, images_converted)
+
+
             image_shape = images_converted[0].shape
             # move stack to last dimension
             images_converted = np.moveaxis(images_converted, 0, -1)
@@ -602,6 +612,7 @@ class MLRoutineWidefieldClarity(Routine):
             # print('converted image shape:',images_converted.shape)
             # Adds extra dimension   
             images_converted = images_converted.reshape(1,image_shape[0],image_shape[1],16)
+
 
             # Divide OTFs
             _, image_processed, _ = Generate_OTF(images_converted, stack_size = 16, Cropped_image_size = image_shape[1], expand_size = 1, input_image_size = 32, defocus_top = list(range(16)), defocus_bottom = [1,0,3,2,5,4,7,6,9,8,11,10,13,12,15,14], maxattempt=1)
@@ -639,7 +650,7 @@ class MLRoutineWidefieldClarity(Routine):
                 sensorless_data['bias_index'] = 0
                 sensorless_data['mode_index'] += 1
 
-        print('current modes',image_index, modes_new)
+        #print('Acquiring Image:',image_index, modes_new)
 
         if image_index >= total_images:
             modes_new[self.trial_modes[mode_index]] -= 1.0

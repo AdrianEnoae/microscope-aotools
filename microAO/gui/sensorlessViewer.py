@@ -540,7 +540,10 @@ class ConventionalResultsViewer(wx.Frame):
         self._metric_images = []
         self._metric_data = []
         self._metric_diagnostics = []
-        self._metric_name = sensorless_params["metric"]
+        if sensorless_params['routine']=='conventional':
+            self._metric_name = sensorless_params["metric"]
+        else:
+            self._metric_name = None
         metric_params = {
             "wavelength": sensorless_params["wavelength"],
             "NA": sensorless_params["NA"],

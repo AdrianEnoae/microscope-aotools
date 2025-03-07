@@ -77,7 +77,22 @@ class ROIViewCanvas(ViewCanvas):
         elif event.LeftUp():
             #Changed here from original
             if self.definingROI:
-                self.roi = self.roi_drag
+                self.roi_drag=list(self.roi_drag)
+
+                if self.roi_drag[2]<256:
+                    print('ROI must be at least 256 pixels wide')
+                    self.roi=None
+                else:
+                    if self.roi_drag[2]%2==1:
+                        self.roi_drag[2]==self.roi_drag[2]-1
+                        self.roi_drag[3]==self.roi_drag[3]-1
+
+                camera = self.Parent.Parent.curCamera
+                camera_roi=camera.getROI()
+                self.roi_drag[0]=self.roi_drag[0]+camera_roi[0]
+                self.roi_drag[1]=self.roi_drag[1]+camera_roi[1]
+
+                self.roi = tuple(self.roi_drag)
                 self.definingROI = False
 
         elif event.Entering() and self.TopLevelParent.IsActive():
@@ -157,6 +172,8 @@ class ROIViewCanvas(ViewCanvas):
                 ('Clear ROI', self.onClearROI)
                 ]
 
+    def onClearROI(self, event = None):
+        self.roi = None
 
     def getROI(self):
         if self.roi:
