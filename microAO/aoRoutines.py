@@ -657,7 +657,7 @@ class MLRoutineWidefieldClarity(Routine):
             sensorless_data["corrections"] = modes_new.copy()
             sensorless_data['correction_stack'].append(modes_new.copy())
         # Format return data
-        modes_new = modes_new/561*610
+        modes_new = modes_new/561*610 #huh?
         return_data = RoutineOutput(
             sensorless_data = sensorless_data,
             new_modes = modes_new
