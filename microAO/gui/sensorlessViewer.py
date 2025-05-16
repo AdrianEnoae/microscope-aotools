@@ -327,6 +327,7 @@ class MetricPlotData:
     metrics: numpy.ndarray
     modes: numpy.ndarray
     mode_label: str
+    failure_flag: bool
 
 class MetricPlotPanel(wx.Panel):
     _MODE_SPACING_FRACTION = 0.5
@@ -386,6 +387,7 @@ class MetricPlotPanel(wx.Panel):
         self._axes.set_xlabel("Mode")
         self._axes.set_ylabel("Metric")
 
+    
     def update(self):
         data = self.GetParent().GetParent()._metric_data[-1]
         # Calculate parameters
@@ -403,6 +405,10 @@ class MetricPlotPanel(wx.Panel):
             )
 
         # Plot
+        if data.failure_flag is False:
+            color='skyblue'
+        else:
+            color='red'
         self._axes.plot(
             numpy.interp(
                 data.modes,
@@ -411,7 +417,7 @@ class MetricPlotPanel(wx.Panel):
             ),
             data.metrics,
             marker="o",
-            color="skyblue",
+            color=color,
         )
 
         # Plot peak, if it has been found
@@ -588,7 +594,8 @@ class ConventionalResultsViewer(wx.Frame):
             peak = results.peak,
             metrics = results.metrics,
             modes = results.modes,
-            mode_label = results.mode_label
+            mode_label = results.mode_label,
+            failure_flag = results.failure_flag
         )
         self._metric_data.append(metric_plot_data)
         self._metric_diagnostics.append(results.metric_diagnostics)

@@ -62,6 +62,7 @@ class ConventionalResults:
     modes: np.ndarray
     mode_label: str
     peak: np.ndarray = None
+    failure_flag: bool = False
 
 @dataclass(frozen=True)
 class ConventionalParamsMode:
@@ -154,7 +155,7 @@ class ConventionalRoutine(Routine):
             image_stack = sensorless_data["image_stack"][-modes.shape[0] :]
 
             # Find aberration amplitudes and correct
-            peak, metrics, metric_diagnostics = AdaptiveOpticsFunctions.find_zernike_amp_sensorless(
+            peak, metrics, metric_diagnostics, failure_flag = AdaptiveOpticsFunctions.find_zernike_amp_sensorless(
                 image_stack=image_stack,
                 modes=modes,
                 metric_name=self.sensorless_params["metric"],
@@ -182,6 +183,7 @@ class ConventionalRoutine(Routine):
                 modes = modes,
                 mode_label = f"Z{mode_index_noll_0 + 1}",
                 peak = peak,
+                failure_flag=failure_flag
             )
 
             # Update indices

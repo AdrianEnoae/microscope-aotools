@@ -314,7 +314,10 @@ class AdaptiveOpticsFunctions():
         return metric
     
     @staticmethod
-    def find_zernike_amp_sensorless(image_stack, modes, metric_name, **kwargs):
+    def find_zernike_amp_sensorless(image_stack, modes, metric_name, fit_threshold=0.9, **kwargs):
+
+        failure_flag=False
+
         # Calculate metrics
         metrics = []
         metric_diagnostics = []
@@ -323,51 +326,52 @@ class AdaptiveOpticsFunctions():
             metrics.append(metric)
             metric_diagnostics.append(metric_diagnostic)
         metrics = np.array(metrics)
-        # Trivial case
-        if metrics.shape[0] == 1:
-            return np.array((modes[0], metrics[0])), metrics
-        # Fit a parabola to the highest metric point and its neighbours
-        if metrics.shape[0] == 2:
-            indices_to_fit = [0, 1]
-        else:
-            max_metric_index = np.argmax(metrics)
-            indices_to_fit = np.array(
-                [max_metric_index - 1, max_metric_index, max_metric_index + 1]
-            )
-            # Handle edge cases
-            if max_metric_index == 0:
-                # Peak is at the left boundary => select two neighbours to the right
-                indices_to_fit += 1
-            elif max_metric_index == metrics.shape[0] - 1:
-                # Peak is at the right boundary => select two neighbours to the left
-                indices_to_fit -= 1
-        parabola = np.polynomial.Polynomial.fit(
-            modes[indices_to_fit], metrics[indices_to_fit], 2
-        )
-        # Find the maxima of the parabola
-        try:
-            parabola_maxima = parabola.deriv().roots()[0]
-            # Consider the boundary points and the maxima, but only if it is within
-            # the boundaries
-            peak_candidates = [
-                (modes[indices_to_fit[0]], metrics[indices_to_fit[0]]),
-                (modes[indices_to_fit[-1]], metrics[indices_to_fit[-1]]),
-            ]
-            if (
-                parabola_maxima > peak_candidates[0][0]
-                and parabola_maxima < peak_candidates[1][0]
-            ):
-                peak_candidates.append(
-                    (parabola_maxima, parabola(parabola_maxima)),
-                )
-            peak_candidates = np.array(peak_candidates)
-            # Find the peak and return it, together with the metrics
-            peak_index = np.argmax(peak_candidates[:, 1])
-            peak = peak_candidates[peak_index]
-        except IndexError:
-            peak = None
 
-        return peak, metrics, metric_diagnostics
+        # Fast exit for trivial cases
+        if metrics.size == 1:
+            return (modes[0], metrics[0]), metrics, metric_diagnostics
+        
+        # Fit a parabola to all data points
+        parabola = np.polynomial.Polynomial.fit(modes, metrics, 2)
+        fitted = parabola(modes) 
+        #Compute coefficient of determination to determine goodness of fit
+        ss_res = np.sum((metrics - fitted) ** 2)
+        ss_tot = np.sum((metrics - metrics.mean()) ** 2)
+        r2     = 1.0 - ss_res / ss_tot if ss_tot else 0.0   # guard div/0
+        good_fit = r2 >= fit_threshold
+
+        
+
+        # Find the maxima of the parabola
+        if not good_fit:
+            failure_flag=True
+            zero_idx = (np.abs(modes)).argmin()
+            peak = (0.0, metrics[zero_idx])
+            peak=0
+        else:
+            a, b, c = parabola.convert().coef
+            if np.isclose(a, 0.0):
+                best_idx = metrics.argmax()
+                peak = (modes[best_idx], metrics[best_idx])
+            else:
+                # Stationary point of the parabola (‐b / 2a)
+                amp_hat = -b / (2.0 * a)
+
+                # Check if peak is within the sweep range
+                lower, upper = modes.min(), modes.max()
+                if amp_hat < lower:
+                    amp_hat = lower
+                elif amp_hat > upper:
+                    amp_hat = upper
+
+                #Check if parabola is upside down
+                if a > 0:
+                    edge_idx = metrics.argmax()
+                    peak = (modes[edge_idx], metrics[edge_idx])
+                else:
+                    peak = (float(amp_hat), float(parabola(amp_hat)))
+
+        return peak, metrics, metric_diagnostics, failure_flag
 
     def calc_phase_error_RMS(self, phase, modes_to_subtract=(0, 1, 2)):
         # NOTE: only works if modes_to_subtract is a contiguous subset of modes

@@ -82,10 +82,8 @@ class ROIViewCanvas(ViewCanvas):
                 if self.roi_drag[2]<256:
                     print('ROI must be at least 256 pixels wide')
                     self.roi=None
-                else:
-                    if self.roi_drag[2]%2==1:
-                        self.roi_drag[2]==self.roi_drag[2]-1
-                        self.roi_drag[3]==self.roi_drag[3]-1
+                
+                    
 
                 camera = self.Parent.Parent.curCamera
                 camera_roi=camera.getROI()

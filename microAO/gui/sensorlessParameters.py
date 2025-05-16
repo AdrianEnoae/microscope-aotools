@@ -414,7 +414,6 @@ class ConventionalParametersDialog(wx.Dialog):
                     )
                 )
         # Update the sensorless AO parameters
-        #self._device.sensorless_params["sensorless_roi"] = self._roi
         self._device.sensorless_params["num_reps"] = widgets_data[0][2]
         self._device.sensorless_params["modes"] = mode_params
         self._device.sensorless_params["NA"] = widgets_data[1][2]
