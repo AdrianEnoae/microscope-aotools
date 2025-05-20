@@ -35,7 +35,8 @@ class _ModesPanel(wx.lib.scrolledpanel.ScrolledPanel):
 
         # Set attributes
         self._device = device
-        self._n_modes = self._device.proxy.get_controlMatrix().shape[1]
+        #self._n_modes = self._device.proxy.get_controlMatrix().shape[1]
+        self._n_modes = 21 #More sensible number of modes
 
         # Create root panel and sizer
         sizer = wx.GridBagSizer()

@@ -314,7 +314,7 @@ class AdaptiveOpticsFunctions():
         return metric
     
     @staticmethod
-    def find_zernike_amp_sensorless(image_stack, modes, metric_name, fit_threshold=0.9, **kwargs):
+    def find_zernike_amp_sensorless(image_stack, modes, metric_name, fit_threshold=0.8, **kwargs):
 
         failure_flag=False
 
@@ -332,8 +332,8 @@ class AdaptiveOpticsFunctions():
             return (modes[0], metrics[0]), metrics, metric_diagnostics
         
         # Fit a parabola to all data points
-        parabola = np.polynomial.Polynomial.fit(modes, metrics, 2)
-        fitted = parabola(modes) 
+        a, b, c = np.polyfit(modes, metrics, 2)
+        fitted  = np.polyval([a, b, c], modes)
         #Compute coefficient of determination to determine goodness of fit
         ss_res = np.sum((metrics - fitted) ** 2)
         ss_tot = np.sum((metrics - metrics.mean()) ** 2)
@@ -345,12 +345,14 @@ class AdaptiveOpticsFunctions():
         # Find the maxima of the parabola
         if not good_fit:
             failure_flag=True
-            zero_idx = (np.abs(modes)).argmin()
-            peak = (0.0, metrics[zero_idx])
-            peak=0
+            lower, upper = modes.min(), modes.max()
+            mid_amp = 0.5 * (lower + upper)
+            mid_idx = np.abs(modes - mid_amp).argmin()
+            peak = (mid_amp, metrics[mid_idx])
+
         else:
-            a, b, c = parabola.convert().coef
             if np.isclose(a, 0.0):
+            
                 best_idx = metrics.argmax()
                 peak = (modes[best_idx], metrics[best_idx])
             else:
@@ -366,10 +368,11 @@ class AdaptiveOpticsFunctions():
 
                 #Check if parabola is upside down
                 if a > 0:
+                
                     edge_idx = metrics.argmax()
                     peak = (modes[edge_idx], metrics[edge_idx])
                 else:
-                    peak = (float(amp_hat), float(parabola(amp_hat)))
+                    peak = (float(amp_hat), float(np.polyval([a, b, c], amp_hat)))
 
         return peak, metrics, metric_diagnostics, failure_flag
 
