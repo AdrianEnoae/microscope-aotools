@@ -20,7 +20,7 @@ def make_pairs(N):
     if N % 2 != 0:
         raise ValueError("N must be even")
     pairs = []
-    for i in range(1, N, 2):
+    for i in range(0, N-1, 2):
         pairs.extend([(i,   i+1),
                       (i+1, i  )])
     return pairs
@@ -70,8 +70,6 @@ def pseudoPSF(batch, biasmode, pairs, pseudopsfsize: int = 32, mode='default'):
     
     
     for n, imagestack in enumerate(batch):
-        
-
         if mode == 'default':
             fourierstack = rfft2(copy(imagestack),axes=(0,1))
             for i, index in enumerate(pairs):

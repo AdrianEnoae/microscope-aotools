@@ -82,16 +82,14 @@ class ROIViewCanvas(ViewCanvas):
                 if self.roi_drag[2]<256:
                     print('ROI must be at least 256 pixels wide')
                     self.roi=None
-                
-                    
+                else:
+                    camera = self.Parent.Parent.curCamera
+                    camera_roi=camera.getROI()
+                    self.roi_drag[0]=self.roi_drag[0]+camera_roi[0]
+                    self.roi_drag[1]=self.roi_drag[1]+camera_roi[1]
 
-                camera = self.Parent.Parent.curCamera
-                camera_roi=camera.getROI()
-                self.roi_drag[0]=self.roi_drag[0]+camera_roi[0]
-                self.roi_drag[1]=self.roi_drag[1]+camera_roi[1]
-
-                self.roi = tuple(self.roi_drag)
-                self.definingROI = False
+                    self.roi = tuple(self.roi_drag)
+                    self.definingROI = False
 
         elif event.Entering() and self.TopLevelParent.IsActive():
             self.SetFocus()

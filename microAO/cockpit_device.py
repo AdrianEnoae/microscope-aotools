@@ -831,32 +831,36 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
         data,
         filepath = None
     ):
-        # Create timestamp
-        ts = time.strftime("%Y%m%d_%H%M", time.gmtime())
+        if params['type'] == 'conventional':
+            # Create timestamp
+            ts = time.strftime("%Y%m%d_%H%M", time.gmtime())
 
-        # Derive file path
-        if not filepath:
-            filepath = os.path.join(
-                wx.GetApp().Config["log"].getpath("dir"),
-                "sensorless_AO_" + ts + ".h5",
-            )
+            # Derive file path
+            if not filepath:
+                filepath = os.path.join(
+                    wx.GetApp().Config["log"].getpath("dir"),
+                    "sensorless_AO_" + ts + ".h5",
+                )
 
-        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
 
-        # Write data to file
-        with h5py.File(filepath, "w") as f:
-            # Write params and data
-            data = [('params', params), ('data', data)]
-            for group_name, group_data in data:
-                group = f.create_group(group_name)
-                for key, val in group_data.items():
-                    try:
-                        group.create_dataset(key, data=val)
-                    except Exception as e:
-                        logger.log.error(
-                            "Failed to write sensorless data: {}".format(key), e
-                        )
+            # Write data to file
+            with h5py.File(filepath, "w") as f:
+                # Write params and data
+                data = [('params', params), ('data', data)]
+                for group_name, group_data in data:
+                    group = f.create_group(group_name)
+                    for key, val in group_data.items():
+                        try:
+                            group.create_dataset(key, data=val)
+                        except Exception as e:
+                            logger.log.error(
+                                "Failed to write sensorless data: {}".format(key), e
+                            )
+        elif params['type'] == 'MLAO':
+            pass
+        #Add code to log MLAO runs
 
     def captureImage(self, camera, imager, timeout=5.0):
         # Set capture method

@@ -632,7 +632,7 @@ class MicroscopeAOCompositeDevicePanel(wx.Panel):
         metricSelectButton = wx.Button(panel_AO, label="Set sensorless routine")
         metricSelectButton.Bind(wx.EVT_BUTTON, self.OnSetRoutine)
 
-        # Button to set sensorless AO
+        # Button to set sensorless AO ROI
         roiSelectButton = wx.Button(panel_AO, label="Set sensorless ROI")
         roiSelectButton.Bind(wx.EVT_BUTTON, self.OnSetSensorlessROI)
 
@@ -936,18 +936,24 @@ class MicroscopeAOCompositeDevicePanel(wx.Panel):
 
         if camera is None:
             return
+        
+        if self._device.sensorless_params["type"] == 'conventional':
+        # Create results viewer for convetional
+            
+            try:
+                window = self.FindWindowById(self._components["sensorless_results"])
+            except:
+                window = None
 
-        # Create results viewer
-        try:
-            window = self.FindWindowById(self._components["sensorless_results"])
-        except:
-            window = None
+            if window is None:
+                window = ConventionalResultsViewer(None)
+                self._components["sensorless_results"] = window.GetId()
 
-        if window is None:
-            window = ConventionalResultsViewer(None)
-            self._components["sensorless_results"] = window.GetId()
+            window.Show()
+        elif self._device.sensorless_params["type"] == 'MLAO':
+            pass
+            #Code for MLAO visualisation here
 
-        window.Show()
 
         # Check if a datapoint exists for this position
         datapoint_z = None

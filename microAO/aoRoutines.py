@@ -8,7 +8,7 @@ from microAO.aoMetrics import metric_function
 from microAO.aoAlg import AdaptiveOpticsFunctions
 import tifffile as tiff
 import os
-from pseudoPSF import pseudoPSF, make_pairs
+from microAO.pseudoPSF import pseudoPSF, make_pairs
 
 @dataclass
 class RoutineOutput():
@@ -94,7 +94,8 @@ class ConventionalRoutine(Routine):
             ),
             "datapoint_z": None,
             "save_as_datapoint": False,
-            "log_path": None
+            "log_path": None,
+            'type': 'conventional'
         }
 
         return parameters
@@ -240,7 +241,7 @@ class ConventionalRoutine(Routine):
 
 class MLRoutineWiener(Routine):
     def name():
-        return "ML Widefield Clarity"
+        return "MLAO Wiener Filter"
 
     @staticmethod
     def defaults():
@@ -251,6 +252,7 @@ class MLRoutineWiener(Routine):
             'log_path': log_path,
             "datapoint_z": None,
             "save_as_datapoint": False,
+            'type': 'MLAO'
         }
 
         return parameters
@@ -267,7 +269,7 @@ class MLRoutineWiener(Routine):
         # Merge additional data (note in-place merge of mutable dict)
         sensorless_data.update(additional_data)
 
-        self.model = k.models.load_model('C:/microscope-aotools/models/FullBias_Wiener_32s32_savedmodel', compile=False)
+        self.model = k.models.load_model('C:\microscope-aotools\models\FullBias_Wiener_32s32_savedmodel.h5', compile=False)
 
         self.trial_modes = [4,5,6,7,8,9,10,21]
         self.offsets = [1.5,-1.5]
@@ -301,7 +303,6 @@ class MLRoutineWiener(Routine):
         result = None
 
         # Image transforms
-        print('sensorless_params', self.sensorless_params)
         # print('sensorless_data', sensorless_data)
 
         # Update index
@@ -324,11 +325,11 @@ class MLRoutineWiener(Routine):
             start_x = (w - 256) // 2
             images_converted = images_converted[:, start_y:start_y+256, start_x:start_x+256]
 
-            # desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-            # output_folder = os.path.join(desktop_path, "MLAO Image")
-            # os.makedirs(output_folder, exist_ok=True)
-            # output_path = os.path.join(output_folder, "MLAO_Stack.tif")
-            # tiff.imwrite(output_path, images_converted)
+            desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+            output_folder = os.path.join(desktop_path, "MLAO Image")
+            os.makedirs(output_folder, exist_ok=True)
+            output_path = os.path.join(output_folder, "MLAO_Stack.tif")
+            tiff.imwrite(output_path, images_converted)
 
 
             image_shape = images_converted[0].shape
@@ -369,16 +370,16 @@ class MLRoutineWiener(Routine):
                 sensorless_data['bias_index']  = 0
                 sensorless_data['mode_index'] += 1
    
-
-        print('Acquiring Image:',image_index, modes_new)
+        print(f'Acquring image ({image_index}):{modes_new[0:max(self.trial_modes)+1]}')
 
         if image_index >= total_images:
             modes_new[self.trial_modes[mode_index]] -= 1.5 #What
             sensorless_data["corrections"] = modes_new.copy()
             sensorless_data['correction_stack'].append(modes_new.copy())
+            print(f'Correction applied:{modes_new[0:max(self.trial_modes)+1]}')
 
         # Format return data
-        modes_new = modes_new/561*610 #NOTE is this for wavelength correction?
+        modes_new = modes_new #/561*610 #NOTE is this for wavelength correction?
         return_data = RoutineOutput(
             sensorless_data = sensorless_data,
             new_modes = modes_new
@@ -388,16 +389,13 @@ class MLRoutineWiener(Routine):
         # Finish if total images acquired
 
 
-        # Update status message
-        status_message = "I'm running"
-
         # print(return_data)
 
         return return_data
 
 class MLRoutineWavelet(Routine):
     def name():
-        return "ML Widefield Clarity"
+        return "MLAO Wavelet"
 
     @staticmethod
     def defaults():
@@ -408,6 +406,7 @@ class MLRoutineWavelet(Routine):
             'log_path': log_path,
             "datapoint_z": None,
             "save_as_datapoint": False,
+            'type': 'MLAO'
         }
 
         return parameters
@@ -458,7 +457,6 @@ class MLRoutineWavelet(Routine):
         result = None
 
         # Image transforms
-        print('sensorless_params', self.sensorless_params)
         # print('sensorless_data', sensorless_data)
 
         # Update index
@@ -481,11 +479,11 @@ class MLRoutineWavelet(Routine):
             start_x = (w - 256) // 2
             images_converted = images_converted[:, start_y:start_y+256, start_x:start_x+256]
 
-            # desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-            # output_folder = os.path.join(desktop_path, "MLAO Image")
-            # os.makedirs(output_folder, exist_ok=True)
-            # output_path = os.path.join(output_folder, "MLAO_Stack.tif")
-            # tiff.imwrite(output_path, images_converted)
+            desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+            output_folder = os.path.join(desktop_path, "MLAO Image")
+            os.makedirs(output_folder, exist_ok=True)
+            output_path = os.path.join(output_folder, "MLAO_Stack.tif")
+            tiff.imwrite(output_path, images_converted)
 
 
             image_shape = images_converted[0].shape
@@ -527,15 +525,15 @@ class MLRoutineWavelet(Routine):
                 sensorless_data['mode_index'] += 1
    
 
-        print('Acquiring Image:',image_index, modes_new)
+        print(f'Acquring image ({image_index}):{modes_new[0:max(self.trial_modes)+1]}')
 
         if image_index >= total_images:
             modes_new[self.trial_modes[mode_index]] -= 1.5 #What
             sensorless_data["corrections"] = modes_new.copy()
             sensorless_data['correction_stack'].append(modes_new.copy())
-
+            print(f'Correction applied:{modes_new[0:max(self.trial_modes)+1]}')
         # Format return data
-        modes_new = modes_new/561*610 #NOTE is this for wavelength correction?
+        modes_new = modes_new #/561*610 #NOTE is this for wavelength correction?
         return_data = RoutineOutput(
             sensorless_data = sensorless_data,
             new_modes = modes_new
@@ -543,11 +541,6 @@ class MLRoutineWavelet(Routine):
         if image_index >= total_images:
             return_data.done = True    
         # Finish if total images acquired
-
-
-        # Update status message
-        status_message = "I'm running"
-
         # print(return_data)
 
         return return_data
