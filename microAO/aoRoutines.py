@@ -545,9 +545,10 @@ class MLRoutineWavelet(Routine):
 
         return return_data
 
+
 class MLRoutineWienerClassifier(Routine):
     def name():
-        return "ML Wiener+Classifier"
+        return "MLAO Wiener+Classifier"
 
     @staticmethod
     def defaults():
@@ -558,6 +559,7 @@ class MLRoutineWienerClassifier(Routine):
             'log_path': log_path,
             "datapoint_z": None,
             "save_as_datapoint": False,
+            'type': 'MLAO'
         }
 
         return parameters
@@ -608,7 +610,6 @@ class MLRoutineWienerClassifier(Routine):
         result = None
 
         # Image transforms
-        print('sensorless_params', self.sensorless_params)
         # print('sensorless_data', sensorless_data)
 
         # Update index
@@ -631,11 +632,11 @@ class MLRoutineWienerClassifier(Routine):
             start_x = (w - 256) // 2
             images_converted = images_converted[:, start_y:start_y+256, start_x:start_x+256]
 
-            # desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-            # output_folder = os.path.join(desktop_path, "MLAO Image")
-            # os.makedirs(output_folder, exist_ok=True)
-            # output_path = os.path.join(output_folder, "MLAO_Stack.tif")
-            # tiff.imwrite(output_path, images_converted)
+            desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+            output_folder = os.path.join(desktop_path, "MLAO Image")
+            os.makedirs(output_folder, exist_ok=True)
+            output_path = os.path.join(output_folder, "MLAO_Stack.tif")
+            tiff.imwrite(output_path, images_converted)
 
 
             image_shape = images_converted[0].shape
@@ -648,7 +649,7 @@ class MLRoutineWienerClassifier(Routine):
 
 
             # Divide OTFs
-            image_processed=pseudoPSF(images_converted,self.trial_modes,self.pairs,mode='wavelet1')           
+            image_processed=pseudoPSF(images_converted,self.trial_modes,self.pairs,mode='wiener')           
 
             #Determine modes present using classifier
             classifier_output=self.classifier.predict(image_processed)
@@ -680,15 +681,15 @@ class MLRoutineWienerClassifier(Routine):
                 sensorless_data['mode_index'] += 1
    
 
-        print('Acquiring Image:',image_index, modes_new)
+        print(f'Acquring image ({image_index}):{modes_new[0:max(self.trial_modes)+1]}')
 
         if image_index >= total_images:
             modes_new[self.trial_modes[mode_index]] -= 1.5 #What
             sensorless_data["corrections"] = modes_new.copy()
             sensorless_data['correction_stack'].append(modes_new.copy())
-
+            print(f'Correction applied:{modes_new[0:max(self.trial_modes)+1]}')
         # Format return data
-        modes_new = modes_new/561*610 #NOTE is this for wavelength correction?
+        modes_new = modes_new #/561*610 #NOTE is this for wavelength correction?
         return_data = RoutineOutput(
             sensorless_data = sensorless_data,
             new_modes = modes_new
@@ -696,19 +697,13 @@ class MLRoutineWienerClassifier(Routine):
         if image_index >= total_images:
             return_data.done = True    
         # Finish if total images acquired
-
-
-        # Update status message
-        status_message = "I'm running"
-
         # print(return_data)
 
         return return_data
 
-
 class MLRoutineWienerClassifierExBias(Routine):
     def name():
-        return "ML Wiener+Classifier+ExtraBiases"
+        return "MLAO Wiener+Classifier+ExtraBiases"
 
     @staticmethod
     def defaults():
@@ -719,6 +714,7 @@ class MLRoutineWienerClassifierExBias(Routine):
             'log_path': log_path,
             "datapoint_z": None,
             "save_as_datapoint": False,
+            'type': 'MLAO'
         }
 
         return parameters
@@ -769,7 +765,6 @@ class MLRoutineWienerClassifierExBias(Routine):
         result = None
 
         # Image transforms
-        print('sensorless_params', self.sensorless_params)
         # print('sensorless_data', sensorless_data)
 
         # Update index
@@ -780,7 +775,7 @@ class MLRoutineWienerClassifierExBias(Routine):
 
         total_images = self.sensorless_params['n_reps'] * 25 + 1  #NOTE THIS NUMBER MIGHT NEED CHANGING BETWEEN MODELS
         if image_index % 25 == 0 :
-            # Grab last 24 images
+            # Grab last 16 images
             images = sensorless_data['image_stack'][image_index-24:image_index]
             # Get image shape
 
@@ -792,11 +787,11 @@ class MLRoutineWienerClassifierExBias(Routine):
             start_x = (w - 256) // 2
             images_converted = images_converted[:, start_y:start_y+256, start_x:start_x+256]
 
-            # desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-            # output_folder = os.path.join(desktop_path, "MLAO Image")
-            # os.makedirs(output_folder, exist_ok=True)
-            # output_path = os.path.join(output_folder, "MLAO_Stack.tif")
-            # tiff.imwrite(output_path, images_converted)
+            desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+            output_folder = os.path.join(desktop_path, "MLAO Image")
+            os.makedirs(output_folder, exist_ok=True)
+            output_path = os.path.join(output_folder, "MLAO_Stack.tif")
+            tiff.imwrite(output_path, images_converted)
 
 
             image_shape = images_converted[0].shape
@@ -809,7 +804,7 @@ class MLRoutineWienerClassifierExBias(Routine):
 
 
             # Divide OTFs
-            image_processed=pseudoPSF(images_converted,self.trial_modes,self.pairs,mode='wavelet1')           
+            image_processed=pseudoPSF(images_converted,self.trial_modes,self.pairs,mode='wiener')           
 
             #Determine modes present using classifier
             classifier_output=self.classifier.predict(image_processed)
@@ -841,15 +836,15 @@ class MLRoutineWienerClassifierExBias(Routine):
                 sensorless_data['mode_index'] += 1
    
 
-        print('Acquiring Image:',image_index, modes_new)
+        print(f'Acquring image ({image_index}):{modes_new[0:max(self.trial_modes)+1]}')
 
         if image_index >= total_images:
             modes_new[self.trial_modes[mode_index]] -= 1.0 #What
             sensorless_data["corrections"] = modes_new.copy()
             sensorless_data['correction_stack'].append(modes_new.copy())
-
+            print(f'Correction applied:{modes_new[0:max(self.trial_modes)+1]}')
         # Format return data
-        modes_new = modes_new/561*610 #NOTE is this for wavelength correction?
+        modes_new = modes_new #/561*610 #NOTE is this for wavelength correction?
         return_data = RoutineOutput(
             sensorless_data = sensorless_data,
             new_modes = modes_new
@@ -857,21 +852,17 @@ class MLRoutineWienerClassifierExBias(Routine):
         if image_index >= total_images:
             return_data.done = True    
         # Finish if total images acquired
-
-
-        # Update status message
-        status_message = "I'm running"
-
         # print(return_data)
 
         return return_data
 
 
-
 routines = {
     'conventional': ConventionalRoutine,
     'MLAO Wiener Filter': MLRoutineWiener,
-    'MLAO Wavelet': MLRoutineWavelet 
+    'MLAO Wavelet': MLRoutineWavelet,
+    'ML Wiener+Classifier': MLRoutineWienerClassifier,
+    'ML Wiener+Classifier+ExtraBiases': MLRoutineWienerClassifierExBias
 }
 
 
