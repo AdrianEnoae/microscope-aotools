@@ -657,7 +657,7 @@ class ML2NWienerClassifier(Routine):
 
             # Predict new modes
             modes_raw = self.model.predict(x=[image_processed,classifier_output])[0,:]
-            modes_raw = modes_raw*classifier_output
+            modes_raw = modes_raw*classifier_output[0]
 
             # 5-10, 11, 22
             modes_new = self.correction.copy()
@@ -814,7 +814,7 @@ class ML2NWaveletClassifier(Routine):
 
             # Predict new modes
             modes_raw = self.model.predict(x=[image_processed,classifier_output])[0,:]
-            modes_raw = modes_raw*classifier_output
+            modes_raw = modes_raw*classifier_output[0]
 
             # 5-10, 11, 22
             modes_new = self.correction.copy()
@@ -971,7 +971,7 @@ class MLAstgWaveletClassifier(Routine):
 
             # Predict new modes
             modes_raw = self.model.predict(x=[image_processed,classifier_output])[0,:]
-            modes_raw = modes_raw*classifier_output
+            modes_raw = modes_raw*classifier_output[0]
             # 5-10, 11, 22
             modes_new = self.correction.copy()
             for i, mode in enumerate(self.trial_modes):

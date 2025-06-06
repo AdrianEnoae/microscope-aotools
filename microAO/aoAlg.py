@@ -314,7 +314,7 @@ class AdaptiveOpticsFunctions():
         return metric
     
     @staticmethod
-    def find_zernike_amp_sensorless(image_stack, modes, metric_name, fit_threshold=0.7, **kwargs):
+    def find_zernike_amp_sensorless(image_stack, modes, metric_name, fit_threshold=0.0, **kwargs):
 
         failure_flag=False
 
