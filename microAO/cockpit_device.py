@@ -715,6 +715,7 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
             self.correctSensorlessAbort()
             return
         
+
         
         #ANDREI'S NOTE: This where I can come in and crop the image according to a ROI
         if 'sensorless_roi' in self.sensorless_params and self.sensorless_params['sensorless_roi']:
@@ -726,7 +727,13 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
             if x>=cx and y>=cy and (x+w)<=(cx+cw) and (y+h)<=(cy+ch):
                 x=x-cx
                 y=y-cy
-                image = image[y : y + h, x : x + w]
+                patch = image[y : y + h, x : x + w]
+                patch_mean = patch.mean()
+                desired_side = max(256, w, h) #Minimum of 256 so it works with MLAO
+                x_insert=(desired_side-w)//2
+                y_insert=(desired_side-h)//2
+                image=np.full((desired_side, desired_side), patch_mean, dtype=patch.dtype)
+                image[y_insert:y_insert + h, x_insert:x_insert + w] = patch
             else:
                 print('Sensorless ROI outside of camera ROI, please reselect')
                 self.sensorless_params['sensorless_roi']=None

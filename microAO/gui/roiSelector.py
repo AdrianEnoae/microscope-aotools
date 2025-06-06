@@ -54,21 +54,26 @@ class ROIViewCanvas(ViewCanvas):
                     self.image.vmax = threshold
             elif self.dragMode == DRAG_ROI:
                 # Get co-ordinates in canvas units
-                coords_x = [self.mouseDragX, self.mouseLdownX]
-                coords_y = [self.mouseDragY, self.mouseLdownY]
-                roi_xmin, roi_ymin = min(coords_x), min(coords_y)
-                roi_xmax, roi_ymax = max(coords_x), max(coords_y)
+                x0 = self.mouseLdownX
+                y0 = self.mouseLdownY
+                x1 = self.curMouseX
+                y1 = self.curMouseY
 
                 # Convert to data indices           
-                roi_min_ind = self.canvasToIndices(roi_xmin, roi_ymin)
-                roi_max_ind = self.canvasToIndices(roi_xmax, roi_ymax)
+                corner0_ind = self.canvasToIndices(min(x0, x1), min(y0, y1))
+                corner1_ind = self.canvasToIndices(max(x0, x1), max(y0, y1))
 
-                # Get size of roi
-                roi_maxsize = max((roi_max_ind[0] - roi_min_ind[0], roi_max_ind[1] - roi_min_ind[1]))
-                roi_size = (roi_maxsize, roi_maxsize)
+                top_row, left_col = corner0_ind
+                bottom_row, right_col = corner1_ind
+
+                width_ind  = right_col - left_col
+                height_ind = bottom_row - top_row
 
                 # Set roi (left, top, width, height)
-                self.roi_drag = (roi_min_ind[1], roi_min_ind[0], roi_size[1], roi_size[0]) 
+                self.roi_drag = ( left_col,
+                                  top_row,
+                                  width_ind,
+                                  height_ind )
 
             self.mouseDragX = self.curMouseX
             self.mouseDragY = self.curMouseY
@@ -79,8 +84,8 @@ class ROIViewCanvas(ViewCanvas):
             if self.definingROI:
                 self.roi_drag=list(self.roi_drag)
 
-                if self.roi_drag[2]<256:
-                    print('ROI must be at least 256 pixels wide')
+                if self.roi_drag[2]<1 or self.roi_drag[3]<1:
+                    print('Error setting ROI')
                     self.roi=None
                 else:
                     camera = self.Parent.Parent.curCamera
