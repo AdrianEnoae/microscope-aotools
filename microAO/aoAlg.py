@@ -23,6 +23,8 @@ from abc import abstractmethod
 import numpy as np
 from scipy.ndimage.measurements import center_of_mass
 from scipy.signal import tukey
+from scipy.optimize import curve_fit
+
 from skimage.filters import threshold_otsu
 import aotools
 import scipy.stats as stats
@@ -30,6 +32,7 @@ from skimage.restoration import unwrap_phase
 from scipy.integrate import trapz
 from microAO.aoMetrics import metric_function
 from microAO.events import *
+
 
 class AdaptiveOpticsFunctions():
 
@@ -314,65 +317,68 @@ class AdaptiveOpticsFunctions():
         return metric
     
     @staticmethod
-    def find_zernike_amp_sensorless(image_stack, modes, metric_name, fit_threshold=0.0, **kwargs):
+    def find_zernike_amp_sensorless(image_stack, modes, metric_name,
+                                fit_threshold=0.0, **kwargs):
 
-        failure_flag=False
+        failure_flag = False
 
-        # Calculate metrics
         metrics = []
         metric_diagnostics = []
         for image in image_stack:
-            metric, metric_diagnostic = metric_function[metric_name](image, **kwargs)
-            metrics.append(metric)
-            metric_diagnostics.append(metric_diagnostic)
+            m, diag = metric_function[metric_name](image, **kwargs)
+            metrics.append(m)
+            metric_diagnostics.append(diag)
         metrics = np.array(metrics)
 
         # Fast exit for trivial cases
         if metrics.size == 1:
             return (modes[0], metrics[0]), metrics, metric_diagnostics
-        
-        # Fit a parabola to all data points
-        a, b, c = np.polyfit(modes, metrics, 2)
-        fitted  = np.polyval([a, b, c], modes)
-        #Compute coefficient of determination to determine goodness of fit
-        ss_res = np.sum((metrics - fitted) ** 2)
-        ss_tot = np.sum((metrics - metrics.mean()) ** 2)
-        r2     = 1.0 - ss_res / ss_tot if ss_tot else 0.0   # guard div/0
-        good_fit = r2 >= fit_threshold
 
-        
+        #Gaussian fit formula
+        def _gauss(x, A, mu, sigma, C):
+            return A * np.exp(-((x - mu)**2) / (2.0 * sigma**2)) + C
 
-        # Find the maxima of the parabola
+        lower, upper = modes.min(), modes.max()
+
+        # initial guesses: amp, center, width, baseline
+        p0 = [
+            metrics.max() - metrics.min(),
+            modes[np.argmax(metrics)],
+            (upper - lower) / 4.0,
+            metrics.min()
+        ]
+
+        # enforce positive amplitude and positive sigma, center in [lower,upper]
+        bounds = (
+            [0.0, lower, 0.0,       -np.inf],
+            [np.inf, upper, np.inf, np.inf]
+        )
+
+        try:
+            popt, _ = curve_fit(_gauss, modes, metrics, p0=p0, bounds=bounds)
+            fitted = _gauss(modes, *popt)
+        except (RuntimeError, ValueError):
+            good_fit = False
+            fitted = None
+        else:
+            #Computed R^2 coefficient to determine if the fit is good or not, based on threshold (1 is perfect, 0 is awful)
+            ss_res = np.sum((metrics - fitted)**2)
+            ss_tot = np.sum((metrics - metrics.mean())**2)
+            r2 = 1.0 - ss_res/ss_tot if ss_tot else 0.0
+            good_fit = (r2 >= fit_threshold) and (popt[0] > 0.0) #Also check the peak is positive
+
         if not good_fit:
-            failure_flag=True
-            lower, upper = modes.min(), modes.max()
-            mid_amp = 0.5 * (lower + upper)
-            mid_idx = np.abs(modes - mid_amp).argmin()
-            peak = (mid_amp, metrics[mid_idx])
+            #in case of bad peak default to middle (no change)
+            failure_flag = True
+            mid = 0.5*(lower + upper)
+            idx = np.abs(modes - mid).argmin()
+            peak = (modes[idx], metrics[idx])
 
         else:
-            if np.isclose(a, 0.0):
-            
-                best_idx = metrics.argmax()
-                peak = (modes[best_idx], metrics[best_idx])
-            else:
-                # Stationary point of the parabola (‐b / 2a)
-                amp_hat = -b / (2.0 * a)
-
-                # Check if peak is within the sweep range
-                lower, upper = modes.min(), modes.max()
-                if amp_hat < lower:
-                    amp_hat = lower
-                elif amp_hat > upper:
-                    amp_hat = upper
-
-                #Check if parabola is upside down
-                if a > 0:
-                
-                    edge_idx = metrics.argmax()
-                    peak = (modes[edge_idx], metrics[edge_idx])
-                else:
-                    peak = (float(amp_hat), float(np.polyval([a, b, c], amp_hat)))
+            A, mu, sigma, C = popt
+            mu_hat = min(max(mu, lower), upper)
+            peak_val = _gauss(mu_hat, A, mu, sigma, C)
+            peak = (float(mu_hat), float(peak_val))
 
         return peak, metrics, metric_diagnostics, failure_flag
 
