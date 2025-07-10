@@ -239,9 +239,9 @@ class ConventionalRoutine(Routine):
         return status_message
 
 
-class ML2NWiener(Routine):
+class ML2NDefault(Routine):
     def name():
-        return "2N Wiener"
+        return "2N Default MLAO"
 
     @staticmethod
     def defaults():
@@ -269,21 +269,15 @@ class ML2NWiener(Routine):
         # Merge additional data (note in-place merge of mutable dict)
         sensorless_data.update(additional_data)
 
-        self.model = k.models.load_model('C:\microscope-aotools\models\FullBias_Wiener_32s32_savedmodel.h5', compile=False)
+        self.model = k.models.load_model('C:\microscope-aotools\models\Fullbias_Default_CorrectOrientation_32s32_savedmodel.h5', compile=False)
 
-        self.trial_modes = [4,5,6,7,8,9,10,21]
-        self.offsets = [1.5,-1.5]
+        self.trial_modes = [4,5,6,7,8,9,10]
+        self.offsets = [1.0,-1.0]
         self.pairs=make_pairs(len(self.trial_modes)*len(self.offsets))
 
         # Define the first correction to apply
         self.initial_modes = sensorless_data["corrections"].copy()
         self.correction = self.initial_modes.copy()                 # Current correction (modes)
-        # random_init_modes = (np.random.rand(8)-0.5)*2
-        # random_init_modes = random_init_modes/np.sqrt(np.sum(random_init_modes**2))
-        # random_init_modes = random_init_modes*np.random.rand()*2
-        # for i, mode in enumerate([4,5,6,7,8,9,10,21]):
-        #     self.correction[mode] += random_init_modes[i]
-        # Update status message
         status_message = "Initialised ML routine"
 
 
@@ -299,8 +293,6 @@ class ML2NWiener(Routine):
     def process(self, sensorless_data):
         return_data = {}
 
-        # Set default result
-        result = None
 
         # Image transforms
         # print('sensorless_data', sensorless_data)
@@ -311,13 +303,11 @@ class ML2NWiener(Routine):
         image_index = sensorless_data['image_index']
         mode_index = sensorless_data['mode_index']
 
-        total_images = self.sensorless_params['n_reps'] * 17 + 1  #NOTE THIS NUMBER MIGHT NEED CHANGING BETWEEN MODELS
-        if image_index % 17 == 0 :
-            # Grab last 16 images
-            images = sensorless_data['image_stack'][image_index-16:image_index]
-            # Get image shape
-
-            # print('image shape:',image_shape)
+        total_images = self.sensorless_params['n_reps'] * (len(self.trial_modes)*2+1) + 1 #ANDREI NOTE: NOT sure why the +1 is here
+        if image_index % (len(self.trial_modes)*2+1) == 0 :
+            # Grab images
+            images = sensorless_data['image_stack'][image_index-len(self.trial_modes)*2:image_index]
+            
             images_converted = np.array([image.astype('float') for image in images])
         
             _, h, w = images_converted.shape
@@ -338,14 +328,18 @@ class ML2NWiener(Routine):
 
             # print('converted image shape:',images_converted.shape)
             # Adds extra dimension   
-            images_converted = images_converted.reshape(1,image_shape[0],image_shape[1],16)
+            images_converted = images_converted.reshape(1,image_shape[0],image_shape[1],14)
 
 
             # Divide OTFs
-            image_processed=pseudoPSF(images_converted,self.trial_modes,self.pairs,mode='wiener')           
+            pseudoPSF_stack=pseudoPSF(images_converted,self.trial_modes,self.pairs,mode='default')           
+
+            output_path = os.path.join(output_folder, "pseudoPSF_Stack.tif")
+            tiff.imwrite(output_path, pseudoPSF_stack)
+
 
             # Predict new modes
-            modes_raw = self.model.predict(image_processed)[0,:]
+            modes_raw = self.model.predict(pseudoPSF_stack)[0,:]
             
             # 5-10, 11, 22
             modes_new = self.correction.copy()
@@ -373,7 +367,7 @@ class ML2NWiener(Routine):
         print(f'Acquring image ({image_index}):{modes_new[0:max(self.trial_modes)+1]}')
 
         if image_index >= total_images:
-            modes_new[self.trial_modes[mode_index]] -= 1.5 #What
+            modes_new[self.trial_modes[mode_index]] -= 1.0 #What
             sensorless_data["corrections"] = modes_new.copy()
             sensorless_data['correction_stack'].append(modes_new.copy())
             print(f'Correction applied:{modes_new[0:max(self.trial_modes)+1]}')
@@ -395,7 +389,7 @@ class ML2NWiener(Routine):
 
 class ML2NWavelet(Routine):
     def name():
-        return "ML 2N Wavelet"
+        return "2N Wavelet MLAO"
 
     @staticmethod
     def defaults():
@@ -423,21 +417,15 @@ class ML2NWavelet(Routine):
         # Merge additional data (note in-place merge of mutable dict)
         sensorless_data.update(additional_data)
 
-        self.model = k.models.load_model('C:/microscope-aotools/models/FullBias_Wavelet_32s32_savedmodel.h5', compile=False)
+        self.model = k.models.load_model('C:\microscope-aotools\models\Fullbias_WaveletSoft_CorrectOrientation_32s32_savedmodel.h5', compile=False)
 
-        self.trial_modes = [4,5,6,7,8,9,10,21]
-        self.offsets = [1.5,-1.5]
+        self.trial_modes = [4,5,6,7,8,9,10]
+        self.offsets = [1.0,-1.0]
         self.pairs=make_pairs(len(self.trial_modes)*len(self.offsets))
 
         # Define the first correction to apply
         self.initial_modes = sensorless_data["corrections"].copy()
         self.correction = self.initial_modes.copy()                 # Current correction (modes)
-        # random_init_modes = (np.random.rand(8)-0.5)*2
-        # random_init_modes = random_init_modes/np.sqrt(np.sum(random_init_modes**2))
-        # random_init_modes = random_init_modes*np.random.rand()*2
-        # for i, mode in enumerate([4,5,6,7,8,9,10,21]):
-        #     self.correction[mode] += random_init_modes[i]
-        # Update status message
         status_message = "Initialised ML routine"
 
 
@@ -453,8 +441,6 @@ class ML2NWavelet(Routine):
     def process(self, sensorless_data):
         return_data = {}
 
-        # Set default result
-        result = None
 
         # Image transforms
         # print('sensorless_data', sensorless_data)
@@ -465,13 +451,11 @@ class ML2NWavelet(Routine):
         image_index = sensorless_data['image_index']
         mode_index = sensorless_data['mode_index']
 
-        total_images = self.sensorless_params['n_reps'] * 17 + 1  #NOTE THIS NUMBER MIGHT NEED CHANGING BETWEEN MODELS
-        if image_index % 17 == 0 :
-            # Grab last 16 images
-            images = sensorless_data['image_stack'][image_index-16:image_index]
-            # Get image shape
-
-            # print('image shape:',image_shape)
+        total_images = self.sensorless_params['n_reps'] * (len(self.trial_modes)*2+1) + 1 #ANDREI NOTE: NOT sure why the +1 is here
+        if image_index % (len(self.trial_modes)*2+1) == 0 :
+            # Grab images
+            images = sensorless_data['image_stack'][image_index-len(self.trial_modes)*2:image_index]
+            
             images_converted = np.array([image.astype('float') for image in images])
         
             _, h, w = images_converted.shape
@@ -492,14 +476,18 @@ class ML2NWavelet(Routine):
 
             # print('converted image shape:',images_converted.shape)
             # Adds extra dimension   
-            images_converted = images_converted.reshape(1,image_shape[0],image_shape[1],16)
+            images_converted = images_converted.reshape(1,image_shape[0],image_shape[1],14)
 
 
             # Divide OTFs
-            image_processed=pseudoPSF(images_converted,self.trial_modes,self.pairs,mode='wavelet1')           
+            pseudoPSF_stack=pseudoPSF(images_converted,self.trial_modes,self.pairs,mode='wavelet')           
+
+            output_path = os.path.join(output_folder, "pseudoPSF_Stack.tif")
+            tiff.imwrite(output_path, pseudoPSF_stack)
+
 
             # Predict new modes
-            modes_raw = self.model.predict(image_processed)[0,:]
+            modes_raw = self.model.predict(pseudoPSF_stack)[0,:]
             
             # 5-10, 11, 22
             modes_new = self.correction.copy()
@@ -524,14 +512,14 @@ class ML2NWavelet(Routine):
                 sensorless_data['bias_index']  = 0
                 sensorless_data['mode_index'] += 1
    
-
         print(f'Acquring image ({image_index}):{modes_new[0:max(self.trial_modes)+1]}')
 
         if image_index >= total_images:
-            modes_new[self.trial_modes[mode_index]] -= 1.5 #What
+            modes_new[self.trial_modes[mode_index]] -= 1.0 #What
             sensorless_data["corrections"] = modes_new.copy()
             sensorless_data['correction_stack'].append(modes_new.copy())
             print(f'Correction applied:{modes_new[0:max(self.trial_modes)+1]}')
+
         # Format return data
         modes_new = modes_new #/561*610 #NOTE is this for wavelength correction?
         return_data = RoutineOutput(
@@ -541,767 +529,14 @@ class ML2NWavelet(Routine):
         if image_index >= total_images:
             return_data.done = True    
         # Finish if total images acquired
-        # print(return_data)
 
-        return return_data
 
-
-class ML2NWienerClassifier(Routine):
-    def name():
-        return "2N Wiener+Classifier"
-
-    @staticmethod
-    def defaults():
-        ts = datetime.strftime(datetime.now(), '%Y-%m-%d %H-%M-%S')
-        log_path = f"D:/Andrei/MLAO_logs/MLWidefield-{ts}.h5"
-        parameters = {
-            'n_reps': 1,
-            'log_path': log_path,
-            "datapoint_z": None,
-            "save_as_datapoint": False,
-            'type': 'MLAO'
-        }
-
-        return parameters
-
-    def setup(self, sensorless_data):
-        # Define additional data required for routine
-        additional_data = {
-            "image_index": 0,
-            "mode_index": 0,
-            "bias_index": 0,
-            "correction_stack": []
-        }
-
-        # Merge additional data (note in-place merge of mutable dict)
-        sensorless_data.update(additional_data)
-
-        self.model = k.models.load_model('C:/microscope-aotools/models/Fullbias_Wiener_wClassifier_32s32_savedmodel.h5', compile=False)
-        self.classifier = k.models.load_model('C:/microscope-aotools/models/PresenceNet_32s32_Classifier_Fullbias_Wiener_savedmodel.h5', compile=False)
-        self.trial_modes = [4,5,6,7,8,9,10,21]
-        self.offsets = [1.5,-1.5]
-        self.pairs=make_pairs(len(self.trial_modes)*len(self.offsets))
-
-        # Define the first correction to apply
-        self.initial_modes = sensorless_data["corrections"].copy()
-        self.correction = self.initial_modes.copy()                 # Current correction (modes)
-        # random_init_modes = (np.random.rand(8)-0.5)*2
-        # random_init_modes = random_init_modes/np.sqrt(np.sum(random_init_modes**2))
-        # random_init_modes = random_init_modes*np.random.rand()*2
-        # for i, mode in enumerate([4,5,6,7,8,9,10,21]):
-        #     self.correction[mode] += random_init_modes[i]
-        # Update status message
-        status_message = "Initialised ML routine"
-
-
-        # Format return data
-        return_data = RoutineOutput(
-            sensorless_data = sensorless_data,
-            status = status_message,
-            new_modes = self.correction.copy(),
-        )
-
-        return return_data
-
-    def process(self, sensorless_data):
-        return_data = {}
-
-        # Set default result
-        result = None
-
-        # Image transforms
-        # print('sensorless_data', sensorless_data)
-
-        # Update index
-        sensorless_data['image_index']  += 1
-
-        image_index = sensorless_data['image_index']
-        mode_index = sensorless_data['mode_index']
-
-        total_images = self.sensorless_params['n_reps'] * 17 + 1  #NOTE THIS NUMBER MIGHT NEED CHANGING BETWEEN MODELS
-        if image_index % 17 == 0 :
-            # Grab last 16 images
-            images = sensorless_data['image_stack'][image_index-16:image_index]
-            # Get image shape
-
-            # print('image shape:',image_shape)
-            images_converted = np.array([image.astype('float') for image in images])
-        
-            _, h, w = images_converted.shape
-            start_y = (h - 256) // 2
-            start_x = (w - 256) // 2
-            images_converted = images_converted[:, start_y:start_y+256, start_x:start_x+256]
-
-            desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-            output_folder = os.path.join(desktop_path, "MLAO Image")
-            os.makedirs(output_folder, exist_ok=True)
-            output_path = os.path.join(output_folder, "MLAO_Stack.tif")
-            tiff.imwrite(output_path, images_converted)
-
-
-            image_shape = images_converted[0].shape
-            # move stack to last dimension
-            images_converted = np.moveaxis(images_converted, 0, -1)
-
-            # print('converted image shape:',images_converted.shape)
-            # Adds extra dimension   
-            images_converted = images_converted.reshape(1,image_shape[0],image_shape[1],16)
-
-
-            # Divide OTFs
-            image_processed=pseudoPSF(images_converted,self.trial_modes,self.pairs,mode='wiener')           
-
-            #Determine modes present using classifier
-            classifier_output=self.classifier.predict(image_processed)
-            classifier_output=(classifier_output > 0.5).astype('float32')
-
-            # Predict new modes
-            modes_raw = self.model.predict(x=[image_processed,classifier_output])[0,:]
-            modes_raw = modes_raw*classifier_output[0]
-
-            # 5-10, 11, 22
-            modes_new = self.correction.copy()
-            for i, mode in enumerate(self.trial_modes):
-                modes_new[mode] -= modes_raw[i]
-
-            # Store correction for next repetition
-            self.correction = modes_new.copy()
-            if image_index < total_images:
-                sensorless_data["corrections"] = modes_new.copy()
-                sensorless_data['correction_stack'].append(modes_new.copy())
-
-            sensorless_data['mode_index'] = 0
-            sensorless_data['bias_index'] = 0
-
-            
-        else:
-            modes_new = self.correction.copy()
-            modes_new[self.trial_modes[mode_index]] += self.offsets[sensorless_data['bias_index']]
-            sensorless_data['bias_index'] += 1
-            if sensorless_data['bias_index'] >= len(self.offsets):
-                sensorless_data['bias_index']  = 0
-                sensorless_data['mode_index'] += 1
-   
-
-        print(f'Acquring image ({image_index}):{modes_new[0:max(self.trial_modes)+1]}')
-
-        if image_index >= total_images:
-            modes_new[self.trial_modes[mode_index]] -= 1.5 #What
-            sensorless_data["corrections"] = modes_new.copy()
-            sensorless_data['correction_stack'].append(modes_new.copy())
-            print(f'Correction applied:{modes_new[0:max(self.trial_modes)+1]}')
-        # Format return data
-        modes_new = modes_new #/561*610 #NOTE is this for wavelength correction?
-        return_data = RoutineOutput(
-            sensorless_data = sensorless_data,
-            new_modes = modes_new
-        )
-        if image_index >= total_images:
-            return_data.done = True    
-        # Finish if total images acquired
-        # print(return_data)
-
-        return return_data
-    
-class ML2NWaveletClassifier(Routine):
-    def name():
-        return "2N Wavelet+Classifier"
-
-    @staticmethod
-    def defaults():
-        ts = datetime.strftime(datetime.now(), '%Y-%m-%d %H-%M-%S')
-        log_path = f"D:/Andrei/MLAO_logs/MLWidefield-{ts}.h5"
-        parameters = {
-            'n_reps': 1,
-            'log_path': log_path,
-            "datapoint_z": None,
-            "save_as_datapoint": False,
-            'type': 'MLAO'
-        }
-
-        return parameters
-
-    def setup(self, sensorless_data):
-        # Define additional data required for routine
-        additional_data = {
-            "image_index": 0,
-            "mode_index": 0,
-            "bias_index": 0,
-            "correction_stack": []
-        }
-
-        # Merge additional data (note in-place merge of mutable dict)
-        sensorless_data.update(additional_data)
-
-        self.model = k.models.load_model('C:/microscope-aotools/models/Fullbias_Wiener_wClassifier_32s32_savedmodel.h5', compile=False)
-        self.classifier = k.models.load_model('C:/microscope-aotools/models/PresenceNet_32s32_Classifier_Fullbias_Wiener_savedmodel.h5', compile=False)
-        self.trial_modes = [4,5,6,7,8,9,10,21]
-        self.offsets = [1.5,-1.5]
-        self.pairs=make_pairs(len(self.trial_modes)*len(self.offsets))
-
-        # Define the first correction to apply
-        self.initial_modes = sensorless_data["corrections"].copy()
-        self.correction = self.initial_modes.copy()                 # Current correction (modes)
-        # random_init_modes = (np.random.rand(8)-0.5)*2
-        # random_init_modes = random_init_modes/np.sqrt(np.sum(random_init_modes**2))
-        # random_init_modes = random_init_modes*np.random.rand()*2
-        # for i, mode in enumerate([4,5,6,7,8,9,10,21]):
-        #     self.correction[mode] += random_init_modes[i]
-        # Update status message
-        status_message = "Initialised ML routine"
-
-
-        # Format return data
-        return_data = RoutineOutput(
-            sensorless_data = sensorless_data,
-            status = status_message,
-            new_modes = self.correction.copy(),
-        )
-
-        return return_data
-
-    def process(self, sensorless_data):
-        return_data = {}
-
-        # Set default result
-        result = None
-
-        # Image transforms
-        # print('sensorless_data', sensorless_data)
-
-        # Update index
-        sensorless_data['image_index']  += 1
-
-        image_index = sensorless_data['image_index']
-        mode_index = sensorless_data['mode_index']
-
-        total_images = self.sensorless_params['n_reps'] * 17 + 1  #NOTE THIS NUMBER MIGHT NEED CHANGING BETWEEN MODELS
-        if image_index % 17 == 0 :
-            # Grab last 16 images
-            images = sensorless_data['image_stack'][image_index-16:image_index]
-            # Get image shape
-
-            # print('image shape:',image_shape)
-            images_converted = np.array([image.astype('float') for image in images])
-        
-            _, h, w = images_converted.shape
-            start_y = (h - 256) // 2
-            start_x = (w - 256) // 2
-            images_converted = images_converted[:, start_y:start_y+256, start_x:start_x+256]
-
-            desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-            output_folder = os.path.join(desktop_path, "MLAO Image")
-            os.makedirs(output_folder, exist_ok=True)
-            output_path = os.path.join(output_folder, "MLAO_Stack.tif")
-            tiff.imwrite(output_path, images_converted)
-
-
-            image_shape = images_converted[0].shape
-            # move stack to last dimension
-            images_converted = np.moveaxis(images_converted, 0, -1)
-
-            # print('converted image shape:',images_converted.shape)
-            # Adds extra dimension   
-            images_converted = images_converted.reshape(1,image_shape[0],image_shape[1],16)
-
-
-            # Divide OTFs
-            image_processed=pseudoPSF(images_converted,self.trial_modes,self.pairs,mode='wavelet1')           
-
-            #Determine modes present using classifier
-            classifier_output=self.classifier.predict(image_processed)
-            classifier_output=(classifier_output > 0.5).astype('float32')
-
-            # Predict new modes
-            modes_raw = self.model.predict(x=[image_processed,classifier_output])[0,:]
-            modes_raw = modes_raw*classifier_output[0]
-
-            # 5-10, 11, 22
-            modes_new = self.correction.copy()
-            for i, mode in enumerate(self.trial_modes):
-                modes_new[mode] -= modes_raw[i]
-
-            # Store correction for next repetition
-            self.correction = modes_new.copy()
-            if image_index < total_images:
-                sensorless_data["corrections"] = modes_new.copy()
-                sensorless_data['correction_stack'].append(modes_new.copy())
-
-            sensorless_data['mode_index'] = 0
-            sensorless_data['bias_index'] = 0
-
-            
-        else:
-            modes_new = self.correction.copy()
-            modes_new[self.trial_modes[mode_index]] += self.offsets[sensorless_data['bias_index']]
-            sensorless_data['bias_index'] += 1
-            if sensorless_data['bias_index'] >= len(self.offsets):
-                sensorless_data['bias_index']  = 0
-                sensorless_data['mode_index'] += 1
-   
-
-        print(f'Acquring image ({image_index}):{modes_new[0:max(self.trial_modes)+1]}')
-
-        if image_index >= total_images:
-            modes_new[self.trial_modes[mode_index]] -= 1.5 #What
-            sensorless_data["corrections"] = modes_new.copy()
-            sensorless_data['correction_stack'].append(modes_new.copy())
-            print(f'Correction applied:{modes_new[0:max(self.trial_modes)+1]}')
-        # Format return data
-        modes_new = modes_new #/561*610 #NOTE is this for wavelength correction?
-        return_data = RoutineOutput(
-            sensorless_data = sensorless_data,
-            new_modes = modes_new
-        )
-        if image_index >= total_images:
-            return_data.done = True    
-        # Finish if total images acquired
-        # print(return_data)
-
-        return return_data
-
-class MLAstgWaveletClassifier(Routine):
-    def name():
-        return "Astg Wavelet+Classifier"
-
-    @staticmethod
-    def defaults():
-        ts = datetime.strftime(datetime.now(), '%Y-%m-%d %H-%M-%S')
-        log_path = f"D:/Andrei/MLAO_logs/MLWidefield-{ts}.h5"
-        parameters = {
-            'n_reps': 1,
-            'log_path': log_path,
-            "datapoint_z": None,
-            "save_as_datapoint": False,
-            'type': 'MLAO'
-        }
-
-        return parameters
-
-    def setup(self, sensorless_data):
-        # Define additional data required for routine
-        additional_data = {
-            "image_index": 0,
-            "mode_index": 0,
-            "bias_index": 0,
-            "correction_stack": []
-        }
-
-        # Merge additional data (note in-place merge of mutable dict)
-        sensorless_data.update(additional_data)
-
-        self.model = k.models.load_model('C:/microscope-aotools/models/Astg1_Wavelet_wClassifier_32s32_savedmodel.h5', compile=False)
-        self.classifier = k.models.load_model('C:/microscope-aotools/models/PresenceNet_32s32_Classifier_Astg1_Wavelet_savedmodel.h5', compile=False)
-        self.trial_modes = [4]
-        self.offsets = [1.5,-1.5]
-        self.pairs=make_pairs(len(self.trial_modes)*len(self.offsets))
-
-        # Define the first correction to apply
-        self.initial_modes = sensorless_data["corrections"].copy()
-        self.correction = self.initial_modes.copy()                 # Current correction (modes)
-        # random_init_modes = (np.random.rand(8)-0.5)*2
-        # random_init_modes = random_init_modes/np.sqrt(np.sum(random_init_modes**2))
-        # random_init_modes = random_init_modes*np.random.rand()*2
-        # for i, mode in enumerate([4,5,6,7,8,9,10,21]):
-        #     self.correction[mode] += random_init_modes[i]
-        # Update status message
-        status_message = "Initialised ML routine"
-
-
-        # Format return data
-        return_data = RoutineOutput(
-            sensorless_data = sensorless_data,
-            status = status_message,
-            new_modes = self.correction.copy(),
-        )
-
-        return return_data
-
-    def process(self, sensorless_data):
-        return_data = {}
-
-        # Set default result
-        result = None
-
-        # Image transforms
-        # print('sensorless_data', sensorless_data)
-
-        # Update index
-        sensorless_data['image_index']  += 1
-
-        image_index = sensorless_data['image_index']
-        mode_index = sensorless_data['mode_index']
-
-        total_images = self.sensorless_params['n_reps'] * 3 + 1  #NOTE THIS NUMBER MIGHT NEED CHANGING BETWEEN MODELS
-        if image_index % 3 == 0 :
-            # Grab last 2 images
-            images = sensorless_data['image_stack'][image_index-2:image_index]
-            # Get image shape
-
-            # print('image shape:',image_shape)
-            images_converted = np.array([image.astype('float') for image in images])
-        
-            _, h, w = images_converted.shape
-            start_y = (h - 256) // 2
-            start_x = (w - 256) // 2
-            images_converted = images_converted[:, start_y:start_y+256, start_x:start_x+256]
-
-            desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-            output_folder = os.path.join(desktop_path, "MLAO Image")
-            os.makedirs(output_folder, exist_ok=True)
-            output_path = os.path.join(output_folder, "MLAO_Stack.tif")
-            tiff.imwrite(output_path, images_converted)
-
-
-            image_shape = images_converted[0].shape
-            # move stack to last dimension
-            images_converted = np.moveaxis(images_converted, 0, -1)
-
-            # print('converted image shape:',images_converted.shape)
-            # Adds extra dimension   
-            images_converted = images_converted.reshape(1,image_shape[0],image_shape[1],2)
-
-
-            # Divide OTFs
-            image_processed=pseudoPSF(images_converted,self.trial_modes,self.pairs,mode='wavelet1')           
-
-            #Determine modes present using classifier
-            classifier_output=self.classifier.predict(image_processed)
-            classifier_output=(classifier_output > 0.5).astype('float32')
-
-            # Predict new modes
-            modes_raw = self.model.predict(x=[image_processed,classifier_output])[0,:]
-            modes_raw = modes_raw*classifier_output[0]
-            # 5-10, 11, 22
-            modes_new = self.correction.copy()
-            for i, mode in enumerate(self.trial_modes):
-                modes_new[mode] -= modes_raw[i]
-
-            # Store correction for next repetition
-            self.correction = modes_new.copy()
-            if image_index < total_images:
-                sensorless_data["corrections"] = modes_new.copy()
-                sensorless_data['correction_stack'].append(modes_new.copy())
-
-            sensorless_data['mode_index'] = 0
-            sensorless_data['bias_index'] = 0
-
-            
-        else:
-            modes_new = self.correction.copy()
-            modes_new[self.trial_modes[mode_index]] += self.offsets[sensorless_data['bias_index']]
-            sensorless_data['bias_index'] += 1
-            if sensorless_data['bias_index'] >= len(self.offsets):
-                sensorless_data['bias_index']  = 0
-                sensorless_data['mode_index'] += 1
-   
-
-        print(f'Acquring image ({image_index}):{modes_new[0:max(self.trial_modes)+1]}')
-
-        if image_index >= total_images:
-            modes_new[self.trial_modes[mode_index]] -= 1.5 #What
-            sensorless_data["corrections"] = modes_new.copy()
-            sensorless_data['correction_stack'].append(modes_new.copy())
-            print(f'Correction applied:{modes_new[0:max(self.trial_modes)+1]}')
-        # Format return data
-        modes_new = modes_new #/561*610 #NOTE is this for wavelength correction?
-        return_data = RoutineOutput(
-            sensorless_data = sensorless_data,
-            new_modes = modes_new
-        )
-        if image_index >= total_images:
-            return_data.done = True    
-        # Finish if total images acquired
         # print(return_data)
 
         return return_data
 
 routines = {
-    'conventional': ConventionalRoutine,
-    '2N Wiener': ML2NWiener,
-    '2N Wavelet': ML2NWavelet,
-    '2N Wiener+Classifier': ML2NWienerClassifier,
-    '2N Wavelet+Classifier': ML2NWaveletClassifier,
-    'Astg Wavelet+Classifier': MLAstgWaveletClassifier
+    'Conventional': ConventionalRoutine,
+    '2N Default MLAO': ML2NDefault,
+    '2N Wavelet MLAO': ML2NWavelet 
 }
-
-
-
-
-# class MLRoutine(Routine):
-#     def name():
-#         return "ML"
-
-#     @staticmethod
-#     def defaults():
-#         ts = datetime.strftime(datetime.now(), '%Y-%m-%d %H-%M-%S')
-#         log_path = f"D:/Matthew/testing/data/ML1-{ts}.h5"
-#         parameters = {
-#             'n_reps': 5,
-#             'log_path': log_path,
-#             "datapoint_z": None,
-#             "save_as_datapoint": False,
-#         }
-
-#         return parameters
-
-#     def setup(self, sensorless_data):
-#         # Define additional data required for routine
-#         additional_data = {
-#             "image_index": 0,
-#             "correction_stack": []
-#         }
-
-#         # Merge additional data (note in-place merge of mutable dict)
-#         sensorless_data.update(additional_data)
-
-#         self.model = k.models.load_model('C:/microscope-aotools/models/cdd_L1L2_var_widefield_3layer_0_8_rmse_mode8_bias_10_ast_pnve_10_12_input_2_batch32s32_savedmodel.h5', compile=False)
-
-#         # Define the first correction to apply
-#         self.initial_modes = sensorless_data["corrections"].copy()
-#         self.correction = self.initial_modes.copy()                 # Current correction (modes)
-#         # random_init_modes = (np.random.rand(8)-0.5)*2
-#         # random_init_modes = random_init_modes/np.sqrt(np.sum(random_init_modes**2))
-#         # random_init_modes = random_init_modes*np.random.rand()*2
-#         # for i, mode in enumerate([4,5,6,7,8,9,10,21]):
-#         #     self.correction[mode] += random_init_modes[i]
-        
-#         # Update status message
-#         status_message = "Initialised ML routine"
-
-
-#         # Format return data
-#         return_data = RoutineOutput(
-#             sensorless_data = sensorless_data,
-#             status = status_message,
-#             new_modes = self.correction.copy(),
-#         )
-
-#         return return_data
-
-#     #ANDREI'S NOTE: This is where the pseudo PSF gets computed and where the image data gets fed into the network
-#     def process(self, sensorless_data):
-#         return_data = {}
-
-#         # Set default result
-#         result = None
-
-#         # Update index
-#         sensorless_data['image_index']  += 1
-
-#         image_index = sensorless_data['image_index']
-
-
-#         modes_new = self.correction.copy()
-#         total_images = self.sensorless_params['n_reps'] * 3+1
-#         if image_index % 3 == 1:
-#             modes_new = self.correction.copy()
-#             modes_new[4] += 1.0
-#         elif image_index % 3 == 2:
-#             modes_new = self.correction.copy()
-#             modes_new[4] -= 1.0
-#         elif image_index % 3 == 0 :
-#             # Grab last 2 images
-#             images = sensorless_data['image_stack'][image_index-2:image_index]
-            
-#             images_converted = np.array([image.astype('float') for image in images])
-            
-#             images_converted = images_converted[:,128:384,128:384]
-#             # Get image shape
-#             image_shape = images_converted[0].shape
-#             # move stack to last dimension
-#             images_converted = np.moveaxis(images_converted, 0, -1)
-#             # Adds extra dimension   
-#             images_converted = images_converted.reshape(1,image_shape[0],image_shape[1],2)
-
-#             # Divide OTFs
-#             _, image_processed, _ = Generate_OTF(images_converted, stack_size = 2, Cropped_image_size = image_shape[1], expand_size = 1, input_image_size = 32, defocus_top = [0,1], defocus_bottom = [1,0], maxattempt=1)
-#             print('OTF image')
-
-#             # Predict new modes
-#             modes_raw = self.model.predict(image_processed)[0,:]
-
-#             # 5-10, 11, 22
-#             modes_new = self.correction.copy()
-#             for i, mode in enumerate([4,5,6,7,8,9,10,21]):
-#                 modes_new[mode] -= modes_raw[i]
-
-#             # Store correction for next repetition
-#             self.correction = modes_new.copy()
-#             if image_index < total_images:
-#                 sensorless_data["corrections"] = modes_new.copy()
-#                 sensorless_data['correction_stack'].append(modes_new.copy())
-
-#         if image_index >= total_images:
-#             modes_new[4] -= 1.0
-#             sensorless_data["corrections"] = modes_new.copy()
-#             sensorless_data['correction_stack'].append(modes_new.copy())
-#         modes_new = modes_new/561*510
-#         # Format return data
-#         return_data = RoutineOutput(
-#             sensorless_data = sensorless_data,
-#             new_modes = modes_new
-#         )
-#         if image_index >= total_images:
-#             return_data.done = True
-
-#         # Finish if total images acquired
-
-
-#         # Update status message
-#         status_message = "I'm running"
-
-#         # print(return_data)
-
-#         return return_data
-
-
-
-# class MLRoutine2(Routine):
-#     def name():
-#         return "ML2"
-
-#     @staticmethod
-#     def defaults():
-#         ts = datetime.strftime(datetime.now(), '%Y-%m-%d %H-%M-%S')
-#         log_path = f"D:/Matthew/testing/data/ML2-{ts}.h5"
-#         parameters = {
-#             'n_reps': 1,
-#             'log_path': log_path,
-#             "datapoint_z": None,
-#             "save_as_datapoint": False,
-#         }
-
-#         return parameters
-
-#     def setup(self, sensorless_data):
-#         # Define additional data required for routine
-#         additional_data = {
-#             "image_index": 0,
-#             "mode_index": 0,
-#             "bias_index": 0,
-#             "correction_stack": []
-#         }
-
-#         # Merge additional data (note in-place merge of mutable dict)
-#         sensorless_data.update(additional_data)
-
-#         self.model = k.models.load_model('C:/microscope-aotools/models/cdd_L1L2_var_widefield_3layer_0_8_rmse_mode8_bias_10_8modes_pnve_10_12_input_16_batch32s32_savedmodel.h5', compile=False)
-
-#         self.trial_modes = [4,5,6,7,8,9,10,21]
-
-
-#         # Define the first correction to apply
-#         self.initial_modes = sensorless_data["corrections"].copy()
-#         self.correction = self.initial_modes.copy()                 # Current correction (modes)
-#         # random_init_modes = (np.random.rand(8)-0.5)*2
-#         # random_init_modes = random_init_modes/np.sqrt(np.sum(random_init_modes**2))
-#         # random_init_modes = random_init_modes*np.random.rand()*2
-#         # for i, mode in enumerate([4,5,6,7,8,9,10,21]):
-#         #     self.correction[mode] += random_init_modes[i]
-#         # Update status message
-#         status_message = "Initialised ML routine"
-
-
-#         # Format return data
-#         return_data = RoutineOutput(
-#             sensorless_data = sensorless_data,
-#             status = status_message,
-#             new_modes = self.correction.copy(),
-#         )
-
-#         return return_data
-
-#     def process(self, sensorless_data):
-#         return_data = {}
-
-#         # Set default result
-#         result = None
-
-#         # Image transforms
-#         print('sensorless_params', self.sensorless_params)
-#         # print('sensorless_data', sensorless_data)
-
-#         # Update index
-#         sensorless_data['image_index']  += 1
-
-#         image_index = sensorless_data['image_index']
-#         mode_index = sensorless_data['mode_index']
-
-#         total_images = self.sensorless_params['n_reps'] * 17+1 
-
-#         if image_index % 17 == 0 :
-#             # Grab last 16 images
-#             images = sensorless_data['image_stack'][image_index-16:image_index]
-#             # Get image shape
-
-#             # print('image shape:',image_shape)
-#             images_converted = np.array([image.astype('float') for image in images])
-#             images_converted = images_converted[:,128:384,128:384]
-#             image_shape = images_converted[0].shape
-#             # move stack to last dimension
-#             images_converted = np.moveaxis(images_converted, 0, -1)
-
-#             # print('converted image shape:',images_converted.shape)
-#             # Adds extra dimension   
-#             images_converted = images_converted.reshape(1,image_shape[0],image_shape[1],16)
-
-#             # Divide OTFs
-#             _, image_processed, _ = Generate_OTF(images_converted, stack_size = 16, Cropped_image_size = image_shape[1], expand_size = 1, input_image_size = 32, defocus_top = list(range(16)), defocus_bottom = [1,0,3,2,5,4,7,6,9,8,11,10,13,12,15,14], maxattempt=1)
-#             print('OTF image')
-
-#             # Predict new modes
-#             modes_raw = self.model.predict(image_processed)[0,:]
-#             print('predicted', modes_raw)
-#             # 5-10, 11, 22
-#             modes_new = self.correction.copy()
-#             for i, mode in enumerate([4,5,6,7,8,9,10,21]):
-#                 modes_new[mode] -= modes_raw[i]
-
-#             # Store correction for next repetition
-#             self.correction = modes_new.copy()
-#             if image_index < total_images:
-#                 sensorless_data["corrections"] = modes_new.copy()
-#                 sensorless_data['correction_stack'].append(modes_new.copy())
-
-#             sensorless_data['mode_index'] = 0
-#             sensorless_data['bias_index'] = 0
-
-            
-#         else:
-#             if sensorless_data['bias_index'] == 0:
-#                 modes_new = self.correction.copy()
-#                 modes_new[self.trial_modes[mode_index]] += 1.0
-
-#                 sensorless_data['bias_index'] = 1
-
-#             else:
-#                 modes_new = self.correction.copy()
-#                 modes_new[self.trial_modes[mode_index]] -= 1.0
-
-#                 sensorless_data['bias_index'] = 0
-#                 sensorless_data['mode_index'] += 1
-
-#         print('current modes',image_index, modes_new)
-
-#         if image_index >= total_images:
-#             modes_new[self.trial_modes[mode_index]] -= 1.0
-#             sensorless_data["corrections"] = modes_new.copy()
-#             sensorless_data['correction_stack'].append(modes_new.copy())
-#         # Format return data
-#         modes_new = modes_new/561*610
-#         return_data = RoutineOutput(
-#             sensorless_data = sensorless_data,
-#             new_modes = modes_new
-#         )
-#         if image_index >= total_images:
-#             return_data.done = True    
-#         # Finish if total images acquired
-
-
-#         # Update status message
-#         status_message = "I'm running"
-
-#         # print(return_data)
-
-#         return return_data

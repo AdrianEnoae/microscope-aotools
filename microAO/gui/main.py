@@ -1267,11 +1267,15 @@ class MicroscopeAOCompositeDevicePanel(wx.Panel):
         if result == wx.ID_OK:
             roi = dialog.getSelectedROI()  
             if roi:
-                if roi[2]%2==1 or roi[3]%2==1:
-                    roi=list(roi)
+                roi=list(roi)
+                
+                if roi[2]%2==1:
                     roi[2]-=1
+
+                if roi[3]%2==1:
                     roi[3]-=1
-                    roi=tuple(roi)
+
+                roi=tuple(roi)
                 print(f"SET AO ROI: {roi}")
                 self._device.sensorless_params['sensorless_roi']=roi
         else:

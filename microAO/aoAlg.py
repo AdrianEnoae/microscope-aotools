@@ -358,6 +358,7 @@ class AdaptiveOpticsFunctions():
             popt, _ = curve_fit(_gauss, modes, metrics, p0=p0, bounds=bounds)
             fitted = _gauss(modes, *popt)
         except (RuntimeError, ValueError):
+            print("GAUSSIAN FITTING FAILED")
             good_fit = False
             fitted = None
         else:
@@ -368,6 +369,7 @@ class AdaptiveOpticsFunctions():
             good_fit = (r2 >= fit_threshold) and (popt[0] > 0.0) #Also check the peak is positive
 
         if not good_fit:
+            print("POOR FITTING")
             #in case of bad peak default to middle (no change)
             failure_flag = True
             mid = 0.5*(lower + upper)
