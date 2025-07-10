@@ -46,6 +46,7 @@ def neighshrink(coefs, lam, base_kernel_size=3):
     lam2 = lam**2
     lam2 = lam2[:, None, None, None, None]  
 
+    sum_sqs = np.maximum(sum_sqs, 0) #There is some floating point errors going on here because I get very small negative numbers for some reason
     with np.errstate(divide='ignore', invalid='ignore'):
         shrink = 1.0 - lam2 / sum_sqs
         shrink[sum_sqs == 0] = 0
@@ -54,9 +55,7 @@ def neighshrink(coefs, lam, base_kernel_size=3):
 
     return shrink * coefs
 
-
 def pseudoPSF(batch, biasmode, pairs, pseudopsfsize: int = 32, mode='default'):
-    
     pseudoPSFbatch=np.zeros((batch.shape[0],int(pseudopsfsize),int(pseudopsfsize),len(pairs)))
     pseudopsf = np.zeros((int(pseudopsfsize),int(pseudopsfsize),len(pairs)))
     
@@ -70,6 +69,8 @@ def pseudoPSF(batch, biasmode, pairs, pseudopsfsize: int = 32, mode='default'):
     
     
     for n, imagestack in enumerate(batch):
+        
+
         if mode == 'default':
             fourierstack = rfft2(copy(imagestack),axes=(0,1))
             for i, index in enumerate(pairs):
@@ -87,7 +88,7 @@ def pseudoPSF(batch, biasmode, pairs, pseudopsfsize: int = 32, mode='default'):
             pseudoPSFbatch[n,:,:,:]=pseudopsf
             continue
 
-        elif mode == 'wavelet1':
+        elif mode == 'wavelet':
             
             anscombe=2*np.sqrt(imagestack+(3/8)) #Normalize noise
             sigma=np.array(restoration.estimate_sigma(anscombe,channel_axis=-1))
@@ -111,5 +112,10 @@ def pseudoPSF(batch, biasmode, pairs, pseudopsfsize: int = 32, mode='default'):
 
             pseudoPSFbatch[n,:,:,:]=pseudopsf
             continue
+
+
+        else:
+            raise ValueError(f"Unknown mode: {mode}. Must be one of ['default', 'wiener', 'wavelet'].")
+ 
 
     return pseudoPSFbatch.astype('float32')
