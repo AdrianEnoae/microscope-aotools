@@ -536,7 +536,7 @@ class ML2NWavelet(Routine):
         return return_data
 
 routines = {
-    'Conventional': ConventionalRoutine,
+    'conventional': ConventionalRoutine,
     '2N Default MLAO': ML2NDefault,
     '2N Wavelet MLAO': ML2NWavelet 
 }

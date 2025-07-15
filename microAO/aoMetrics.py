@@ -73,6 +73,7 @@ def measure_fourier_metric(image, wavelength, NA, pixel_size, noise_amp_factor=1
     OTF_outer_rad = (freq_ratio) * (np.max(image.shape) / 2)
 
     im_shift = np.fft.fftshift(image)
+
     tukey_window = tukey(np.max(im_shift.shape), .10, True)
     tukey_window = np.fft.fftshift(tukey_window.reshape(1, -1) * tukey_window.reshape(-1, 1))
     tukey_window_crop = tukey_window[int(tukey_window.shape[0] / 2 - im_shift.shape[0] / 2):
@@ -80,13 +81,14 @@ def measure_fourier_metric(image, wavelength, NA, pixel_size, noise_amp_factor=1
                         int(tukey_window.shape[1] / 2 - im_shift.shape[1] / 2):
                         int(tukey_window.shape[1] / 2 + im_shift.shape[1] / 2)]
     im_tukey = im_shift * tukey_window_crop
+    
     fftarray = np.fft.fftshift(np.fft.fft2(im_tukey))
 
     fftarray_sq_log = np.log(np.real(fftarray * np.conj(fftarray)))
 
     noise_mask = make_OTF_mask(np.shape(image), 0, 1.1 * OTF_outer_rad)
     threshold = np.mean(fftarray_sq_log[noise_mask == 0]) * noise_amp_factor
-
+    
     OTF_mask = make_OTF_mask(np.shape(image), 0.1 * OTF_outer_rad, OTF_outer_rad)
     freq_above_noise = (fftarray_sq_log > threshold) * OTF_mask
     metric = np.count_nonzero(freq_above_noise)
