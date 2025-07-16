@@ -841,7 +841,7 @@ class MLAstgWavelet(Routine):
 
 
 routines = {
-    'Conventional': ConventionalRoutine,
+    'conventional': ConventionalRoutine,
     '2N Default MLAO': ML2NDefault,
     '2N Wavelet MLAO': ML2NWavelet,
     'Astigmatism Default MLAO': MLAstgDefault,
