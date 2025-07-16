@@ -64,8 +64,31 @@ def make_OTF_mask(size, inner_rad, outer_rad):
     ring_mask = outer_mask * inner_mask
     return ring_mask
 
+def find_noise_level(image, wavelength, NA, pixel_size, noise_amp_factor=1.125):
+    ray_crit_dist = (1.22 * wavelength) / (2 * NA)
+    ray_crit_freq = 1 / ray_crit_dist
+    max_freq = 1 / (2 * pixel_size)
+    freq_ratio = ray_crit_freq / max_freq
+    OTF_outer_rad = (freq_ratio) * (np.max(image.shape) / 2)
+    im_shift = np.fft.fftshift(image)
 
-def measure_fourier_metric(image, wavelength, NA, pixel_size, noise_amp_factor=1.125, **kwargs):
+    tukey_window = tukey(np.max(im_shift.shape), .10, True)
+    tukey_window = np.fft.fftshift(tukey_window.reshape(1, -1) * tukey_window.reshape(-1, 1))
+    tukey_window_crop = tukey_window[int(tukey_window.shape[0] / 2 - im_shift.shape[0] / 2):
+                                     int(tukey_window.shape[0] / 2 + im_shift.shape[0] / 2),
+                        int(tukey_window.shape[1] / 2 - im_shift.shape[1] / 2):
+                        int(tukey_window.shape[1] / 2 + im_shift.shape[1] / 2)]
+    im_tukey = im_shift * tukey_window_crop
+    
+    fftarray = np.fft.fftshift(np.fft.fft2(im_tukey))
+
+    fftarray_sq_log = np.log(np.real(fftarray * np.conj(fftarray)))
+
+    noise_mask = make_OTF_mask(np.shape(image), 0, 1.1 * OTF_outer_rad)
+    threshold = np.mean(fftarray_sq_log[noise_mask == 0]) * noise_amp_factor
+    return threshold
+
+def measure_fourier_metric(image, wavelength, NA, pixel_size, fourier_noise_level, **kwargs):
     ray_crit_dist = (1.22 * wavelength) / (2 * NA)
     ray_crit_freq = 1 / ray_crit_dist
     max_freq = 1 / (2 * pixel_size)
@@ -83,14 +106,11 @@ def measure_fourier_metric(image, wavelength, NA, pixel_size, noise_amp_factor=1
     im_tukey = im_shift * tukey_window_crop
     
     fftarray = np.fft.fftshift(np.fft.fft2(im_tukey))
-
     fftarray_sq_log = np.log(np.real(fftarray * np.conj(fftarray)))
 
-    noise_mask = make_OTF_mask(np.shape(image), 0, 1.1 * OTF_outer_rad)
-    threshold = np.mean(fftarray_sq_log[noise_mask == 0]) * noise_amp_factor
-    
+   
     OTF_mask = make_OTF_mask(np.shape(image), 0.1 * OTF_outer_rad, OTF_outer_rad)
-    freq_above_noise = (fftarray_sq_log > threshold) * OTF_mask
+    freq_above_noise = (fftarray_sq_log > fourier_noise_level) * OTF_mask
     metric = np.count_nonzero(freq_above_noise)
     return metric, DiagnosticsFourier(fftarray_sq_log, freq_above_noise)
 

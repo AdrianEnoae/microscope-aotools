@@ -321,7 +321,7 @@ class AdaptiveOpticsFunctions():
                                 fit_threshold=0.0, **kwargs):
 
         failure_flag = False
-
+        
         metrics = []
         metric_diagnostics = []
         for image in image_stack:

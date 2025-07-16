@@ -9,6 +9,7 @@ from microAO.aoAlg import AdaptiveOpticsFunctions
 import tifffile as tiff
 import os
 from microAO.pseudoPSF import pseudoPSF, make_pairs
+from microAO.aoMetrics import find_noise_level
 
 @dataclass
 class RoutineOutput():
@@ -132,6 +133,8 @@ class ConventionalRoutine(Routine):
             new_modes = new_modes,
         )
 
+        self.sensorless_params['fourier_noise_level']=None
+
         return return_data
 
     def process(self, sensorless_data):
@@ -155,6 +158,17 @@ class ConventionalRoutine(Routine):
             )
             image_stack = sensorless_data["image_stack"][-modes.shape[0] :]
 
+
+            if self.sensorless_params["metric"]=='fourier' and self.sensorless_params['fourier_noise_level']==None:
+                self.sensorless_params['fourier_noise_level']=find_noise_level(
+                    image_stack[0],
+                    wavelength=self.sensorless_params["wavelength"],
+                    NA=self.sensorless_params["NA"],
+                    pixel_size=self.sensorless_params["pixel_size"]
+                    )
+
+
+
             # Find aberration amplitudes and correct
             peak, metrics, metric_diagnostics, failure_flag = AdaptiveOpticsFunctions.find_zernike_amp_sensorless(
                 image_stack=image_stack,
@@ -163,6 +177,7 @@ class ConventionalRoutine(Routine):
                 wavelength=self.sensorless_params["wavelength"],
                 NA=self.sensorless_params["NA"],
                 pixel_size=self.sensorless_params["pixel_size"],
+                fourier_noise_level=self.sensorless_params['fourier_noise_level']
             )
 
             # If a peak isn't found, set abort flag
