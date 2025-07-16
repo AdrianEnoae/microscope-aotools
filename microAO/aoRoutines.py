@@ -287,6 +287,7 @@ class ML2NDefault(Routine):
         self.model = k.models.load_model('C:\microscope-aotools\models\Fullbias_Default_CorrectOrientation_32s32_savedmodel.h5', compile=False)
 
         self.trial_modes = [4,5,6,7,8,9,10]
+        self.correction_modes=self.trial_modes
         self.offsets = [1.0,-1.0]
         self.pairs=make_pairs(len(self.trial_modes)*len(self.offsets))
 
@@ -338,15 +339,15 @@ class ML2NDefault(Routine):
 
 
             image_shape = images_converted[0].shape
-            # move stack to last dimension
             images_converted = np.moveaxis(images_converted, 0, -1)
-
-            # print('converted image shape:',images_converted.shape)
-            # Adds extra dimension   
             images_converted = images_converted.reshape(1,image_shape[0],image_shape[1],14)
 
-
-            # Divide OTFs
+            images_converted = images_converted.astype("float32")
+            i_min, i_max = [0,1]
+            denom = (images_converted.max() - images_converted.min()) if images_converted.max() != images_converted.min() else 1e-8
+            images_converted = (images_converted - images_converted.min()) / denom
+            images_converted = images_converted * (i_max - i_min) + i_min
+            
             pseudoPSF_stack=pseudoPSF(images_converted,self.trial_modes,self.pairs,mode='default')           
 
             output_path = os.path.join(output_folder, "pseudoPSF_Stack.tif")
@@ -358,7 +359,7 @@ class ML2NDefault(Routine):
             
             # 5-10, 11, 22
             modes_new = self.correction.copy()
-            for i, mode in enumerate(self.trial_modes):
+            for i, mode in enumerate(self.correction_modes):
                 modes_new[mode] -= modes_raw[i]
 
             # Store correction for next repetition
@@ -435,6 +436,7 @@ class ML2NWavelet(Routine):
         self.model = k.models.load_model('C:\microscope-aotools\models\Fullbias_WaveletSoft_CorrectOrientation_32s32_savedmodel.h5', compile=False)
 
         self.trial_modes = [4,5,6,7,8,9,10]
+        self.correction_modes=self.trial_modes
         self.offsets = [1.0,-1.0]
         self.pairs=make_pairs(len(self.trial_modes)*len(self.offsets))
 
@@ -486,15 +488,15 @@ class ML2NWavelet(Routine):
 
 
             image_shape = images_converted[0].shape
-            # move stack to last dimension
             images_converted = np.moveaxis(images_converted, 0, -1)
-
-            # print('converted image shape:',images_converted.shape)
-            # Adds extra dimension   
             images_converted = images_converted.reshape(1,image_shape[0],image_shape[1],14)
 
-
-            # Divide OTFs
+            images_converted = images_converted.astype("float32")
+            i_min, i_max = [0,1]
+            denom = (images_converted.max() - images_converted.min()) if images_converted.max() != images_converted.min() else 1e-8
+            images_converted = (images_converted - images_converted.min()) / denom
+            images_converted = images_converted * (i_max - i_min) + i_min
+           
             pseudoPSF_stack=pseudoPSF(images_converted,self.trial_modes,self.pairs,mode='wavelet')           
 
             output_path = os.path.join(output_folder, "pseudoPSF_Stack.tif")
@@ -506,7 +508,157 @@ class ML2NWavelet(Routine):
             
             # 5-10, 11, 22
             modes_new = self.correction.copy()
-            for i, mode in enumerate(self.trial_modes):
+            for i, mode in enumerate(self.correction_modes):
+                modes_new[mode] -= modes_raw[i]
+
+            # Store correction for next repetition
+            self.correction = modes_new.copy()
+            if image_index < total_images:
+                sensorless_data["corrections"] = modes_new.copy()
+                sensorless_data['correction_stack'].append(modes_new.copy())
+
+            sensorless_data['mode_index'] = 0
+            sensorless_data['bias_index'] = 0
+
+            
+        else:
+            modes_new = self.correction.copy()
+            modes_new[self.trial_modes[mode_index]] += self.offsets[sensorless_data['bias_index']]
+            sensorless_data['bias_index'] += 1
+            if sensorless_data['bias_index'] >= len(self.offsets):
+                sensorless_data['bias_index']  = 0
+                sensorless_data['mode_index'] += 1
+   
+        print(f'Acquring image ({image_index}):{modes_new[0:max(self.trial_modes)+1]}')
+
+        if image_index >= total_images:
+            modes_new[self.trial_modes[mode_index]] -= 1.0 #What
+            sensorless_data["corrections"] = modes_new.copy()
+            sensorless_data['correction_stack'].append(modes_new.copy())
+            print(f'Correction applied:{modes_new[0:max(self.trial_modes)+1]}')
+
+        # Format return data
+        modes_new = modes_new #/561*610 #NOTE is this for wavelength correction?
+        return_data = RoutineOutput(
+            sensorless_data = sensorless_data,
+            new_modes = modes_new
+        )
+        if image_index >= total_images:
+            return_data.done = True    
+        # Finish if total images acquired
+
+
+        # print(return_data)
+ 
+        return return_data
+
+
+class MLAstgDefault(Routine):
+    def name():
+        return "Astigmatism Default MLAO"
+
+    @staticmethod
+    def defaults():
+        ts = datetime.strftime(datetime.now(), '%Y-%m-%d %H-%M-%S')
+        log_path = f"D:/Andrei/MLAO_logs/MLWidefield-{ts}.h5"
+        parameters = {
+            'n_reps': 1,
+            'log_path': log_path,
+            "datapoint_z": None,
+            "save_as_datapoint": False,
+            'type': 'MLAO'
+        }
+
+        return parameters
+
+    def setup(self, sensorless_data):
+        # Define additional data required for routine
+        additional_data = {
+            "image_index": 0,
+            "mode_index": 0,
+            "bias_index": 0,
+            "correction_stack": []
+        }
+
+        # Merge additional data (note in-place merge of mutable dict)
+        sensorless_data.update(additional_data)
+
+        self.model = k.models.load_model('C:\microscope-aotools\models\Astigmatism_Default_CorrectOrientation_32s32_savedmodel.h5', compile=False)
+
+        self.trial_modes = [4]
+        self.correction_modes=[4,5,6,7,8,9,10]
+        self.offsets = [1.0,-1.0]
+        self.pairs=make_pairs(len(self.trial_modes)*len(self.offsets))
+
+        # Define the first correction to apply
+        self.initial_modes = sensorless_data["corrections"].copy()
+        self.correction = self.initial_modes.copy()                 # Current correction (modes)
+        status_message = "Initialised ML routine"
+
+
+        # Format return data
+        return_data = RoutineOutput(
+            sensorless_data = sensorless_data,
+            status = status_message,
+            new_modes = self.correction.copy(),
+        )
+
+        return return_data
+
+    def process(self, sensorless_data):
+        return_data = {}
+
+
+        # Image transforms
+        # print('sensorless_data', sensorless_data)
+
+        # Update index
+        sensorless_data['image_index']  += 1
+
+        image_index = sensorless_data['image_index']
+        mode_index = sensorless_data['mode_index']
+
+        total_images = self.sensorless_params['n_reps'] * (len(self.trial_modes)*2+1) + 1 #ANDREI NOTE: NOT sure why the +1 is here
+        if image_index % (len(self.trial_modes)*2+1) == 0 :
+            # Grab images
+            images = sensorless_data['image_stack'][image_index-len(self.trial_modes)*2:image_index]
+            
+            images_converted = np.array([image.astype('float') for image in images])
+        
+            _, h, w = images_converted.shape
+            start_y = (h - 256) // 2
+            start_x = (w - 256) // 2
+            images_converted = images_converted[:, start_y:start_y+256, start_x:start_x+256]
+
+            desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+            output_folder = os.path.join(desktop_path, "MLAO Image")
+            os.makedirs(output_folder, exist_ok=True)
+            output_path = os.path.join(output_folder, "MLAO_Stack.tif")
+            tiff.imwrite(output_path, images_converted)
+
+
+            image_shape = images_converted[0].shape
+            images_converted = np.moveaxis(images_converted, 0, -1)
+            images_converted = images_converted.reshape(1,image_shape[0],image_shape[1],14)
+
+            images_converted = images_converted.astype("float32")
+            i_min, i_max = [0,1]
+            denom = (images_converted.max() - images_converted.min()) if images_converted.max() != images_converted.min() else 1e-8
+            images_converted = (images_converted - images_converted.min()) / denom
+            images_converted = images_converted * (i_max - i_min) + i_min
+
+            pseudoPSF_stack=pseudoPSF(images_converted,self.trial_modes,self.pairs,mode='default')           
+
+            output_path = os.path.join(output_folder, "pseudoPSF_Stack.tif")
+            tiff.imwrite(output_path, pseudoPSF_stack)
+
+
+            # Predict new modes
+            modes_raw = self.model.predict(pseudoPSF_stack)[0,:]
+            
+            # 5-10, 11, 22
+            modes_new = self.correction.copy()
+            for i, mode in enumerate(self.correction_modes):
                 modes_new[mode] -= modes_raw[i]
 
             # Store correction for next repetition
@@ -550,8 +702,163 @@ class ML2NWavelet(Routine):
 
         return return_data
 
+
+class MLAstgWavelet(Routine):
+    def name():
+        return "Astigmatism Wavelet MLAO"
+
+    @staticmethod
+    def defaults():
+        ts = datetime.strftime(datetime.now(), '%Y-%m-%d %H-%M-%S')
+        log_path = f"D:/Andrei/MLAO_logs/MLWidefield-{ts}.h5"
+        parameters = {
+            'n_reps': 1,
+            'log_path': log_path,
+            "datapoint_z": None,
+            "save_as_datapoint": False,
+            'type': 'MLAO'
+        }
+
+        return parameters
+
+    def setup(self, sensorless_data):
+        # Define additional data required for routine
+        additional_data = {
+            "image_index": 0,
+            "mode_index": 0,
+            "bias_index": 0,
+            "correction_stack": []
+        }
+
+        # Merge additional data (note in-place merge of mutable dict)
+        sensorless_data.update(additional_data)
+
+        self.model = k.models.load_model('C:\microscope-aotools\models\Astigmatism_WaveletSoft_CorrectOrientation_32s32_savedmodel.h5', compile=False)
+
+        self.trial_modes = [4]
+        self.correction_modes=[4,5,6,7,8,9,10]
+        self.offsets = [1.0,-1.0]
+        self.pairs=make_pairs(len(self.trial_modes)*len(self.offsets))
+
+        # Define the first correction to apply
+        self.initial_modes = sensorless_data["corrections"].copy()
+        self.correction = self.initial_modes.copy()                 # Current correction (modes)
+        status_message = "Initialised ML routine"
+
+
+        # Format return data
+        return_data = RoutineOutput(
+            sensorless_data = sensorless_data,
+            status = status_message,
+            new_modes = self.correction.copy(),
+        )
+
+        return return_data
+
+    def process(self, sensorless_data):
+        return_data = {}
+
+
+        # Image transforms
+        # print('sensorless_data', sensorless_data)
+
+        # Update index
+        sensorless_data['image_index']  += 1
+
+        image_index = sensorless_data['image_index']
+        mode_index = sensorless_data['mode_index']
+
+        total_images = self.sensorless_params['n_reps'] * (len(self.trial_modes)*2+1) + 1 #ANDREI NOTE: NOT sure why the +1 is here
+        if image_index % (len(self.trial_modes)*2+1) == 0 :
+            # Grab images
+            images = sensorless_data['image_stack'][image_index-len(self.trial_modes)*2:image_index]
+            
+            images_converted = np.array([image.astype('float') for image in images])
+        
+            _, h, w = images_converted.shape
+            start_y = (h - 256) // 2
+            start_x = (w - 256) // 2
+            images_converted = images_converted[:, start_y:start_y+256, start_x:start_x+256]
+
+            desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+            output_folder = os.path.join(desktop_path, "MLAO Image")
+            os.makedirs(output_folder, exist_ok=True)
+            output_path = os.path.join(output_folder, "MLAO_Stack.tif")
+            tiff.imwrite(output_path, images_converted)
+
+
+            image_shape = images_converted[0].shape
+            images_converted = np.moveaxis(images_converted, 0, -1)
+            images_converted = images_converted.reshape(1,image_shape[0],image_shape[1],14)
+
+            images_converted = images_converted.astype("float32")
+            i_min, i_max = [0,1]
+            denom = (images_converted.max() - images_converted.min()) if images_converted.max() != images_converted.min() else 1e-8
+            images_converted = (images_converted - images_converted.min()) / denom
+            images_converted = images_converted * (i_max - i_min) + i_min
+
+            pseudoPSF_stack=pseudoPSF(images_converted,self.trial_modes,self.pairs,mode='wavelet')           
+
+            output_path = os.path.join(output_folder, "pseudoPSF_Stack.tif")
+            tiff.imwrite(output_path, pseudoPSF_stack)
+
+
+            # Predict new modes
+            modes_raw = self.model.predict(pseudoPSF_stack)[0,:]
+            
+            # 5-10, 11, 22
+            modes_new = self.correction.copy()
+            for i, mode in enumerate(self.correction_modes):
+                modes_new[mode] -= modes_raw[i]
+
+            # Store correction for next repetition
+            self.correction = modes_new.copy()
+            if image_index < total_images:
+                sensorless_data["corrections"] = modes_new.copy()
+                sensorless_data['correction_stack'].append(modes_new.copy())
+
+            sensorless_data['mode_index'] = 0
+            sensorless_data['bias_index'] = 0
+
+            
+        else:
+            modes_new = self.correction.copy()
+            modes_new[self.trial_modes[mode_index]] += self.offsets[sensorless_data['bias_index']]
+            sensorless_data['bias_index'] += 1
+            if sensorless_data['bias_index'] >= len(self.offsets):
+                sensorless_data['bias_index']  = 0
+                sensorless_data['mode_index'] += 1
+   
+        print(f'Acquring image ({image_index}):{modes_new[0:max(self.trial_modes)+1]}')
+
+        if image_index >= total_images:
+            modes_new[self.trial_modes[mode_index]] -= 1.0 #What
+            sensorless_data["corrections"] = modes_new.copy()
+            sensorless_data['correction_stack'].append(modes_new.copy())
+            print(f'Correction applied:{modes_new[0:max(self.trial_modes)+1]}')
+
+        # Format return data
+        modes_new = modes_new #/561*610 #NOTE is this for wavelength correction?
+        return_data = RoutineOutput(
+            sensorless_data = sensorless_data,
+            new_modes = modes_new
+        )
+        if image_index >= total_images:
+            return_data.done = True    
+        # Finish if total images acquired
+
+
+        # print(return_data)
+
+        return return_data
+
+
+
+
 routines = {
     'conventional': ConventionalRoutine,
     '2N Default MLAO': ML2NDefault,
-    '2N Wavelet MLAO': ML2NWavelet 
+    '2N Wavelet MLAO': ML2NWavelet,
+    'Astigmatism Default MLAO': MLAstgDefault,
+    'Astigmatism Wavelet MLAO': MLAstgWavelet 
 }
