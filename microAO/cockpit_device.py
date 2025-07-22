@@ -59,6 +59,9 @@ from microAO.gui.main import MicroscopeAOCompositeDevicePanel
 from microAO.gui.sensorlessViewer import ConventionalResults
 from microAO.aoAlg import AdaptiveOpticsFunctions
 from microAO.aoRoutines import routines
+from scipy.signal.windows import tukey
+
+
 
 class AOHandler(cockpit.handlers.deviceHandler.DeviceHandler):
     def __init__(
@@ -709,6 +712,30 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
         # Take image. This will trigger the iterative sensorless AO correction
         wx.CallAfter(wx.GetApp().Imager.takeImage)
 
+    @staticmethod
+    def _tukey_window(image, feather=0.1):
+
+        img = np.asarray(image)
+
+        if img.ndim == 2:
+            # Single image
+            rows, cols = img.shape
+            wy = tukey(rows, feather, sym=True)
+            wx = tukey(cols, feather, sym=True)
+            window2d = np.outer(wy, wx)
+            return img * window2d
+
+        elif img.ndim == 3:
+            # Stack of images
+            n_slices, rows, cols = img.shape
+            wy = tukey(rows, feather, sym=True)
+            wx = tukey(cols, feather, sym=True)
+            window2d = np.outer(wy, wx)
+            return img * window2d[np.newaxis, :, :]
+
+
+
+
     def correctSensorlessImage(self, image, _):
         # Check for abort flag and abort if set
         if self._abort["sensorless"]:
@@ -728,11 +755,11 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
                 x=x-cx
                 y=y-cy
                 patch = image[y : y + h, x : x + w]
-                patch_mean = patch.mean()
+                patch = self._tukey_window(patch)
                 desired_side = max(256, w, h) #Minimum of 256 so it works with MLAO
                 x_insert=(desired_side-w)//2
                 y_insert=(desired_side-h)//2
-                image=np.full((desired_side, desired_side), patch_mean, dtype=patch.dtype)
+                image=np.full((desired_side, desired_side), 0, dtype=patch.dtype)
                 image[y_insert:y_insert + h, x_insert:x_insert + w] = patch
             else:
                 print('Sensorless ROI outside of camera ROI, please reselect')
@@ -1174,3 +1201,5 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
         return np.array(
             [poly(z) for poly in self._corrfit_polys[cname]]
         ) * self._corrfit_coeffs[cname]
+    
+
