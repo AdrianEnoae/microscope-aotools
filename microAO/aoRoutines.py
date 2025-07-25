@@ -340,7 +340,7 @@ class ML2NDefault(Routine):
 
             image_shape = images_converted[0].shape
             images_converted = np.moveaxis(images_converted, 0, -1)
-            images_converted = images_converted.reshape(1,image_shape[0],image_shape[1],14)
+            images_converted = images_converted.reshape(1,image_shape[0],image_shape[1],len(self.trial_modes)*len(self.offsets))
 
             images_converted = images_converted.astype("float32")
             i_min, i_max = [0,1]
@@ -386,7 +386,7 @@ class ML2NDefault(Routine):
             modes_new[self.trial_modes[mode_index]] -= 1.0 #What
             sensorless_data["corrections"] = modes_new.copy()
             sensorless_data['correction_stack'].append(modes_new.copy())
-            print(f'Correction applied:{modes_new[0:max(self.trial_modes)+1]}')
+            print(f'Correction applied:{modes_new[0:max(self.correction_modes)+1]}')
 
         # Format return data
         modes_new = modes_new #/561*610 #NOTE is this for wavelength correction?
@@ -489,7 +489,7 @@ class ML2NWavelet(Routine):
 
             image_shape = images_converted[0].shape
             images_converted = np.moveaxis(images_converted, 0, -1)
-            images_converted = images_converted.reshape(1,image_shape[0],image_shape[1],14)
+            images_converted = images_converted.reshape(1,image_shape[0],image_shape[1],len(self.trial_modes)*len(self.offsets))
 
             images_converted = images_converted.astype("float32")
             i_min, i_max = [0,1]
@@ -535,7 +535,7 @@ class ML2NWavelet(Routine):
             modes_new[self.trial_modes[mode_index]] -= 1.0 #What
             sensorless_data["corrections"] = modes_new.copy()
             sensorless_data['correction_stack'].append(modes_new.copy())
-            print(f'Correction applied:{modes_new[0:max(self.trial_modes)+1]}')
+            print(f'Correction applied:{modes_new[0:max(self.correction_modes)+1]}')
 
         # Format return data
         modes_new = modes_new #/561*610 #NOTE is this for wavelength correction?
@@ -639,7 +639,7 @@ class MLAstgDefault(Routine):
 
             image_shape = images_converted[0].shape
             images_converted = np.moveaxis(images_converted, 0, -1)
-            images_converted = images_converted.reshape(1,image_shape[0],image_shape[1],14)
+            images_converted = images_converted.reshape(1,image_shape[0],image_shape[1],len(self.trial_modes)*len(self.offsets))
 
             images_converted = images_converted.astype("float32")
             i_min, i_max = [0,1]
@@ -685,7 +685,7 @@ class MLAstgDefault(Routine):
             modes_new[self.trial_modes[mode_index]] -= 1.0 #What
             sensorless_data["corrections"] = modes_new.copy()
             sensorless_data['correction_stack'].append(modes_new.copy())
-            print(f'Correction applied:{modes_new[0:max(self.trial_modes)+1]}')
+            print(f'Correction applied:{modes_new[0:max(self.correction_modes)+1]}')
 
         # Format return data
         modes_new = modes_new #/561*610 #NOTE is this for wavelength correction?
@@ -789,7 +789,7 @@ class MLAstgWavelet(Routine):
 
             image_shape = images_converted[0].shape
             images_converted = np.moveaxis(images_converted, 0, -1)
-            images_converted = images_converted.reshape(1,image_shape[0],image_shape[1],14)
+            images_converted = images_converted.reshape(1,image_shape[0],image_shape[1],len(self.trial_modes)*len(self.offsets))
 
             images_converted = images_converted.astype("float32")
             i_min, i_max = [0,1]
@@ -835,7 +835,7 @@ class MLAstgWavelet(Routine):
             modes_new[self.trial_modes[mode_index]] -= 1.0 #What
             sensorless_data["corrections"] = modes_new.copy()
             sensorless_data['correction_stack'].append(modes_new.copy())
-            print(f'Correction applied:{modes_new[0:max(self.trial_modes)+1]}')
+            print(f'Correction applied:{modes_new[0:max(self.correction_modes)+1]}')
 
         # Format return data
         modes_new = modes_new #/561*610 #NOTE is this for wavelength correction?
