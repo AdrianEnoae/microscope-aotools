@@ -310,6 +310,7 @@ class MLAOBase(Routine):
             pad_h = max(256 - h, 0)
             pad_w = max(256 - w, 0)
             if pad_h or pad_w:
+                arr = self._tukey_window(arr)
                 pad_top    = pad_h // 2
                 pad_bottom = pad_h - pad_top
                 pad_left   = pad_w // 2
@@ -380,7 +381,6 @@ class MLAOBase(Routine):
     
     @staticmethod
     def _tukey_window(image, feather=0.1):
-
         img = np.asarray(image)
 
         if img.ndim == 2:
@@ -423,8 +423,8 @@ class ML2NWavelet(MLAOBase):
 
 
 class MLAstgDefault(MLAOBase):
-    MODEL_PATH       = r'C:\microscope-aotools\models\Astigmatism_Default_CorrectOrientation_32s32_savedmodel.h5'
-    TRIAL_MODES      = [4]
+    MODEL_PATH       = r'C:\microscope-aotools\models\Astigmatism2_Default_CorrectOrientation_32s32_savedmodel.h5'
+    TRIAL_MODES      = [4, 5]
     CORRECTION_MODES = [4, 5, 6, 7, 8, 9, 10]
     OFFSETS          = [1.0, -1.0]
     PSEUDO_MODE      = 'default'
@@ -434,8 +434,8 @@ class MLAstgDefault(MLAOBase):
 
 
 class MLAstgWavelet(MLAOBase):
-    MODEL_PATH       = r'C:\microscope-aotools\models\Astigmatism_WaveletSoft_CorrectOrientation_32s32_savedmodel.h5'
-    TRIAL_MODES      = [4]
+    MODEL_PATH       = r'C:\microscope-aotools\models\Astigmatism2_WaveletSoft_CorrectOrientation_32s32_savedmodel.h5'
+    TRIAL_MODES      = [4, 5]
     CORRECTION_MODES = [4, 5, 6, 7, 8, 9, 10]
     OFFSETS          = [1.0, -1.0]
     PSEUDO_MODE      = 'wavelet'
