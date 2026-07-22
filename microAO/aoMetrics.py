@@ -21,6 +21,8 @@ import dataclasses
 import numpy as np
 from scipy.signal import tukey
 from skimage.filters import threshold_otsu
+from microAO.aoWaveletMetric import wavelet_image_quality_metric
+from microAO.oldAoWaveletMetric import old_wavelet_image_quality_metric
 
 
 @dataclasses.dataclass(frozen=True)
@@ -50,6 +52,34 @@ class DiagnosticsFourierPower:
 class DiagnosticsSecondMoment:
     fftarray_sq_log: np.ndarray
     fftarray_sq_log_masked: np.ndarray
+
+@dataclasses.dataclass(frozen=True)
+class DiagnosticsWavelet:
+    placeholder: np.ndarray
+
+def _tukey_window(image, feather=0.1):
+
+        img = np.asarray(image)
+
+        if img.ndim == 2:
+            # Single image
+            rows, cols = img.shape
+            wy = tukey(rows, feather, sym=True)
+            wx = tukey(cols, feather, sym=True)
+            window2d = np.outer(wy, wx)
+            return img * window2d
+
+        elif img.ndim == 3:
+            # Stack of images
+            n_slices, rows, cols = img.shape
+            wy = tukey(rows, feather, sym=True)
+            wx = tukey(cols, feather, sym=True)
+            window2d = np.outer(wy, wx)
+            return img * window2d[np.newaxis, :, :]
+
+
+
+
 
 def make_OTF_mask(size, inner_rad, outer_rad):
     rad_y = int(size[0] / 2)
@@ -89,23 +119,23 @@ def find_noise_level(image, wavelength, NA, pixel_size, noise_amp_factor=1.125):
     return threshold
 
 def measure_fourier_metric(image, wavelength, NA, pixel_size, fourier_noise_level, **kwargs):
+
+   #Pad and feather image to a square
+    h,w=np.shape(image)
+    patch = _tukey_window(image)
+    desired_side = max(w, h) 
+    x_insert=(desired_side-w)//2
+    y_insert=(desired_side-h)//2
+    image=np.full((desired_side, desired_side), 0, dtype=patch.dtype)
+    image[y_insert:y_insert + h, x_insert:x_insert + w] = patch
+
     ray_crit_dist = (1.22 * wavelength) / (2 * NA)
     ray_crit_freq = 1 / ray_crit_dist
     max_freq = 1 / (2 * pixel_size)
     freq_ratio = ray_crit_freq / max_freq
     OTF_outer_rad = (freq_ratio) * (np.max(image.shape) / 2)
-
-    im_shift = np.fft.fftshift(image)
-
-    tukey_window = tukey(np.max(im_shift.shape), .10, True)
-    tukey_window = np.fft.fftshift(tukey_window.reshape(1, -1) * tukey_window.reshape(-1, 1))
-    tukey_window_crop = tukey_window[int(tukey_window.shape[0] / 2 - im_shift.shape[0] / 2):
-                                     int(tukey_window.shape[0] / 2 + im_shift.shape[0] / 2),
-                        int(tukey_window.shape[1] / 2 - im_shift.shape[1] / 2):
-                        int(tukey_window.shape[1] / 2 + im_shift.shape[1] / 2)]
-    im_tukey = im_shift * tukey_window_crop
     
-    fftarray = np.fft.fftshift(np.fft.fft2(im_tukey))
+    fftarray = np.fft.fftshift(np.fft.fft2(image)) #Might need to remove the shift here
     fftarray_sq_log = np.log(np.real(fftarray * np.conj(fftarray)))
 
    
@@ -114,20 +144,32 @@ def measure_fourier_metric(image, wavelength, NA, pixel_size, fourier_noise_leve
     metric = np.count_nonzero(freq_above_noise)
     return metric, DiagnosticsFourier(fftarray_sq_log, freq_above_noise)
 
-def measure_contrast_metric(image, no_intensities = 100, **kwargs):
-    flattened_image = image.flatten()
-
-    flattened_image_list = flattened_image.tolist()
-    flattened_image_list.sort()
-
-    mean_top = np.mean(flattened_image_list[-no_intensities:])
-    mean_bottom = np.mean(flattened_image[:no_intensities])
+def measure_contrast_metric(image, percent=1.0, **kwargs):
+    img = np.asarray(image, dtype=np.float32)
+    p = np.pad(img, ((1, 1), (1, 1)), mode="reflect")
+    smoothed = (
+        p[0:-2, 0:-2] + p[0:-2, 1:-1] + p[0:-2, 2:  ] +
+        p[1:-1, 0:-2] + p[1:-1, 1:-1] + p[1:-1, 2:  ] +
+        p[2:  , 0:-2] + p[2:  , 1:-1] + p[2:  , 2:  ]
+    ) / 9.0
+    frac = percent / 100.0 if percent >= 1.0 else percent
+    if not (0.0 < frac < 0.5):
+        raise ValueError("percent must correspond to a fraction in (0, 0.5).")
+    flat = smoothed.ravel()
+    n = flat.size
+    k = max(1, int(np.ceil(frac * n)))
+    sorted_flat = np.sort(flat)
+    sum_bottom = float(np.sum(sorted_flat[:k]))
+    sum_top = float(np.sum(sorted_flat[-k:]))
+    eps = np.finfo(np.float32).eps
+    denom = sum_bottom if abs(sum_bottom) > eps else eps
+    ratio = sum_top / denom
     return (
-        mean_top/mean_bottom,
+        ratio,
         DiagnosticsContrast(
-            image,
-            mean_top,
-            mean_bottom
+            image,   
+            sum_top,
+            sum_bottom
         )
     )
 
@@ -146,21 +188,29 @@ def measure_gradient_metric(image, **kwargs):
 
 def measure_fourier_power_metric(image, wavelength, NA, pixel_size, noise_amp_factor=1.125,
                                  high_f_amp_factor=100, **kwargs):
+    
+
+    #Pad and feather image to a square
+    h,w=np.shape(image)
+    patch = _tukey_window(image)
+    desired_side = max(w, h) 
+    x_insert=(desired_side-w)//2
+    y_insert=(desired_side-h)//2
+    image=np.full((desired_side, desired_side), 0, dtype=patch.dtype)
+    image[y_insert:y_insert + h, x_insert:x_insert + w] = patch
+
+
+
+
+    
     ray_crit_dist = (1.22 * wavelength) / (2 * NA)
     ray_crit_freq = 1 / ray_crit_dist
     max_freq = 1 / (2 * pixel_size)
     freq_ratio = ray_crit_freq / max_freq
     OTF_outer_rad = freq_ratio * (np.max(np.shape(image)) / 2)
 
-    im_shift = np.fft.fftshift(image)
-    tukey_window = tukey(np.max(im_shift.shape), .10, True)
-    tukey_window = np.fft.fftshift(tukey_window.reshape(1, -1) * tukey_window.reshape(-1, 1))
-    tukey_window_crop = tukey_window[int(tukey_window.shape[0] / 2 - im_shift.shape[0] / 2):
-                                     int(tukey_window.shape[0] / 2 + im_shift.shape[0] / 2),
-                        int(tukey_window.shape[1] / 2 - im_shift.shape[1] / 2):
-                        int(tukey_window.shape[1] / 2 + im_shift.shape[1] / 2)]
-    im_tukey = im_shift * tukey_window_crop
-    fftarray = np.fft.fftshift(np.fft.fft2(im_tukey))
+
+    fftarray = np.fft.fftshift(np.fft.fft2(image))
 
     fftarray_sq_log = np.log(np.real(fftarray * np.conj(fftarray)))
 
@@ -192,21 +242,26 @@ def measure_fourier_power_metric(image, wavelength, NA, pixel_size, noise_amp_fa
 
 
 def measure_second_moment_metric(image, wavelength, NA, pixel_size, **kwargs):
+
+    #Pad and feather image to a square
+    h,w=np.shape(image)
+    patch = _tukey_window(image)
+    desired_side = max(w, h) 
+    x_insert=(desired_side-w)//2
+    y_insert=(desired_side-h)//2
+    image=np.full((desired_side, desired_side), 0, dtype=patch.dtype)
+    image[y_insert:y_insert + h, x_insert:x_insert + w] = patch
+
+
+
     ray_crit_dist = (1.22 * wavelength) / (2 * NA)
     ray_crit_freq = 1 / ray_crit_dist
     max_freq = 1 / (2 * pixel_size)
     freq_ratio = ray_crit_freq / max_freq
     OTF_outer_rad = freq_ratio * (np.max(np.shape(image)) / 2)
 
-    im_shift = np.fft.fftshift(image)
-    tukey_window = tukey(np.max(im_shift.shape), .10, True)
-    tukey_window = np.fft.fftshift(tukey_window.reshape(1, -1) * tukey_window.reshape(-1, 1))
-    tukey_window_crop = tukey_window[int(tukey_window.shape[0] / 2 - im_shift.shape[0] / 2):
-                                     int(tukey_window.shape[0] / 2 + im_shift.shape[0] / 2),
-                        int(tukey_window.shape[1] / 2 - im_shift.shape[1] / 2):
-                        int(tukey_window.shape[1] / 2 + im_shift.shape[1] / 2)]
-    im_tukey = im_shift * tukey_window_crop
-    fftarray = np.fft.fftshift(np.fft.fft2(im_tukey))
+  
+    fftarray = np.fft.fftshift(np.fft.fft2(image))
 
     fftarray_sq_log = np.log(np.real(fftarray * np.conj(fftarray)))
 
@@ -230,18 +285,51 @@ def measure_second_moment_metric(image, wavelength, NA, pixel_size, **kwargs):
     metric = np.sum(fftarray_sq_log_masked)/np.sum(fftarray_sq_log)
     return metric, DiagnosticsSecondMoment(fftarray_sq_log, fftarray_sq_log_masked)
 
+#ANDREI's wavelet metric (see aoWaveletMetric for actually implementation)
+def measure_wavelet_metric(
+    image,
+    wavelength,
+    NA,
+    pixel_size,
+    wavelength_ex=None,
+    mode="widefield",
+    params=None,
+    **kwargs
+):
+    filter_bank_parameters = {'NA':NA,'wavelength_em':wavelength*(10**6),'wavelength_ex':wavelength_ex,
+                              'pixel_size_um':pixel_size*(10**6),'mode':mode}
+    return  wavelet_image_quality_metric(image,filter_bank_params=filter_bank_parameters), DiagnosticsWavelet(np.zeros((50,50)))
+
+def measure_old_wavelet_metric(
+    image,
+    wavelength,
+    NA,
+    pixel_size,
+    wavelength_ex=None,
+    mode="widefield",
+    params=None,
+    **kwargs
+):
+   
+    return old_wavelet_image_quality_metric(_tukey_window(image),NA,pixel_size*(10**6),wavelength*(10**6),wavelength*(10**6)), DiagnosticsWavelet(np.zeros((50,50)))
+
+
 metric_function = {
     'fourier': measure_fourier_metric,
     'contrast': measure_contrast_metric,
     'fourier_power': measure_fourier_power_metric,
     'gradient': measure_gradient_metric,
     'second_moment': measure_second_moment_metric,
+    'wavelet' : measure_wavelet_metric,
+    'old_wavelet' : measure_old_wavelet_metric,
 }
 
 metric_names = dict([
-    ('fourier', "Fourier metric",),
+    ('fourier', "Fourier Metric",),
     ('contrast', "Contrast metric"),
     ('fourier_power', "Fourier Power metric"),
     ('gradient', "Gradient metric"),
     ('second_moment', "Second Moment metric"),
+    ('wavelet','Wavelet metric'),
+    ('old_wavelet','Old wavelet metric')
 ])

@@ -59,7 +59,6 @@ from microAO.gui.main import MicroscopeAOCompositeDevicePanel
 from microAO.gui.sensorlessViewer import ConventionalResults
 from microAO.aoAlg import AdaptiveOpticsFunctions
 from microAO.aoRoutines import routines
-from scipy.signal.windows import tukey
 
 
 
@@ -172,7 +171,8 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
         self._abort = {
             "calib_data": False,
             "calib_calc": False,
-            "sensorless": False
+            "sensorless": False,
+            "fine_tuning": False,
         }
         events.subscribe(events.USER_ABORT, self._on_abort)
 
@@ -699,7 +699,7 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
         self.set_correction("sensorless", results.new_modes)
         self.toggle_correction("sensorless", True)
         self.refresh_corrections()
-
+        time.sleep(0.1) #ANDREI'S NOTE: Testing delays between setting the dm and camera acquisition
         # Subscribe to camera events
         events.subscribe(
             events.NEW_IMAGE % self.sensorless_data["camera_name"],
@@ -711,30 +711,6 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
 
         # Take image. This will trigger the iterative sensorless AO correction
         wx.CallAfter(wx.GetApp().Imager.takeImage)
-
-    @staticmethod
-    def _tukey_window(image, feather=0.1):
-
-        img = np.asarray(image)
-
-        if img.ndim == 2:
-            # Single image
-            rows, cols = img.shape
-            wy = tukey(rows, feather, sym=True)
-            wx = tukey(cols, feather, sym=True)
-            window2d = np.outer(wy, wx)
-            return img * window2d
-
-        elif img.ndim == 3:
-            # Stack of images
-            n_slices, rows, cols = img.shape
-            wy = tukey(rows, feather, sym=True)
-            wx = tukey(cols, feather, sym=True)
-            window2d = np.outer(wy, wx)
-            return img * window2d[np.newaxis, :, :]
-
-
-
 
     def correctSensorlessImage(self, image, _):
         # Check for abort flag and abort if set
@@ -754,13 +730,7 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
             if x>=cx and y>=cy and (x+w)<=(cx+cw) and (y+h)<=(cy+ch):
                 x=x-cx
                 y=y-cy
-                patch = image[y : y + h, x : x + w]
-                patch = self._tukey_window(patch)
-                desired_side = max(256, w, h) #Minimum of 256 so it works with MLAO
-                x_insert=(desired_side-w)//2
-                y_insert=(desired_side-h)//2
-                image=np.full((desired_side, desired_side), 0, dtype=patch.dtype)
-                image[y_insert:y_insert + h, x_insert:x_insert + w] = patch
+                image = image[y : y + h, x : x + w]
             else:
                 print('Sensorless ROI outside of camera ROI, please reselect')
                 self.sensorless_params['sensorless_roi']=None
@@ -915,6 +885,246 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
             return result[0]
         else:
             raise TimeoutError("Camera capture timed out")
+
+    @cockpit.util.threads.callInNewThread
+    def collectFineTuningData(self, camera, imager, params):
+        """Collect one batch of MLAO fine-tuning data.
+
+        Saves:
+            save_root/X/batch_XXXXXX.tif
+            save_root/Y/batch_XXXXXX.tif
+
+        X shape:
+            batch_size x num_bias_images x H x W
+
+        Y shape:
+            batch_size x num_target_modes
+        """
+
+        logger.log.info("Starting fine-tuning data collection")
+
+        try:
+            self._collectFineTuningData(camera, imager, params)
+        except Exception as exc:
+            logger.log.error(
+                "Fine-tuning data collection failed: {}".format(exc)
+            )
+            wx.CallAfter(
+                wx.MessageBox,
+                "Fine-tuning data collection failed:\n{}".format(exc),
+                "Error",
+            )
+        finally:
+            self._abort["fine_tuning"] = False
+            events.publish(events.UPDATE_STATUS_LIGHT, "image count", "")
+            try:
+                self.refresh_corrections()
+            except Exception:
+                pass
+
+    def _collectFineTuningData(self, camera, imager, params):
+        self.checkIfCalibrated()
+
+        save_root = str(params["save_root"])
+        x_dir = os.path.join(save_root, "X")
+        y_dir = os.path.join(save_root, "Y")
+        os.makedirs(x_dir, exist_ok=True)
+        os.makedirs(y_dir, exist_ok=True)
+
+        batch_index = self._nextFineTuningBatchIndex(x_dir, y_dir)
+
+        target_modes = list(params["target_modes"])
+        trial_modes = list(params["trial_modes"])
+        offsets = list(params["offsets"])
+        extra_modes = list(params.get("extra_modes", []))
+
+        batch_size = int(params["batch_size"])
+        target_max = float(params["target_max_magnitude_rad"])
+        extra_max = float(params.get("extra_max_magnitude_rad", 0.0))
+
+        control_matrix = self.proxy.get_controlMatrix()
+        n_modes = control_matrix.shape[1]
+
+        all_modes = target_modes + trial_modes + extra_modes
+        if len(all_modes) == 0:
+            raise ValueError("No target, trial, or extra modes were selected.")
+
+        if max(all_modes) >= n_modes:
+            raise ValueError(
+                "Requested mode index {} but the control matrix only supports "
+                "{} modes.".format(max(all_modes), n_modes)
+            )
+
+        # Start from the currently enabled correction state.
+        base_modes, _ = self.sum_corrections()
+        if base_modes is None or len(base_modes) == 0:
+            base_modes = np.zeros(n_modes, dtype=float)
+        else:
+            base_modes = np.asarray(base_modes, dtype=float).copy()
+
+        if base_modes.size < n_modes:
+            padded = np.zeros(n_modes, dtype=float)
+            padded[:base_modes.size] = base_modes
+            base_modes = padded
+
+        bias_vectors = self._makeFineTuningBiasVectors(
+            n_modes,
+            trial_modes,
+            offsets,
+        )
+
+        rng = np.random.default_rng()
+
+        x_batch = []
+        y_batch = []
+
+        total_images = batch_size * len(bias_vectors)
+        image_counter = 0
+
+        for datapoint_index in range(batch_size):
+            if self._abort["fine_tuning"]:
+                raise RuntimeError("Fine-tuning data collection aborted.")
+
+            target_coeffs = self._randomFineTuningCoefficients(
+                rng,
+                len(target_modes),
+                target_max,
+            )
+
+            target_vector = np.zeros(n_modes, dtype=float)
+            for coeff_index, mode_index in enumerate(target_modes):
+                target_vector[mode_index] = target_coeffs[coeff_index]
+
+            extra_vector = np.zeros(n_modes, dtype=float)
+            if extra_modes and extra_max > 0:
+                extra_coeffs = self._randomFineTuningCoefficients(
+                    rng,
+                    len(extra_modes),
+                    extra_max,
+                )
+                for coeff_index, mode_index in enumerate(extra_modes):
+                    extra_vector[mode_index] = extra_coeffs[coeff_index]
+
+            unknown_aberration = target_vector + extra_vector
+
+            image_stack = []
+
+            for bias_index, bias_vector in enumerate(bias_vectors):
+                if self._abort["fine_tuning"]:
+                    raise RuntimeError("Fine-tuning data collection aborted.")
+
+                image_counter += 1
+
+                events.publish(
+                    events.UPDATE_STATUS_LIGHT,
+                    "image count",
+                    (
+                        "Fine-tuning data collection: datapoint {}/{}, "
+                        "bias image {}/{}, total image {}/{}."
+                    ).format(
+                        datapoint_index + 1,
+                        batch_size,
+                        bias_index + 1,
+                        len(bias_vectors),
+                        image_counter,
+                        total_images,
+                    ),
+                )
+
+                modes_to_apply = base_modes + unknown_aberration + bias_vector
+
+                self.set_phase(modes_to_apply)
+
+                time.sleep(0.1)
+
+                image = self.captureImage(camera, imager)
+                image_stack.append(np.asarray(image))
+
+            x_batch.append(np.stack(image_stack, axis=0))
+            y_batch.append(target_coeffs.astype(np.float32))
+
+        x_batch = np.stack(x_batch, axis=0)
+        y_batch = np.stack(y_batch, axis=0).astype(np.float32)
+
+        x_path = os.path.join(x_dir, "batch_{:06d}.tif".format(batch_index))
+        y_path = os.path.join(y_dir, "batch_{:06d}.tif".format(batch_index))
+
+        tifffile.imwrite(x_path,x_batch,imagej=True,metadata={"axes": "TCYX",})
+        tifffile.imwrite(y_path, y_batch)
+
+        logger.log.info(
+            "Finished fine-tuning data collection. Saved X={} shape={}, "
+            "Y={} shape={}".format(
+                x_path,
+                x_batch.shape,
+                y_path,
+                y_batch.shape,
+            )
+        )
+
+        wx.CallAfter(
+            wx.MessageBox,
+            (
+                "Fine-tuning batch saved.\n\n"
+                "X: {}\nshape: {}\n\n"
+                "Y: {}\nshape: {}"
+            ).format(
+                x_path,
+                x_batch.shape,
+                y_path,
+                y_batch.shape,
+            ),
+            "Fine-tuning data collection",
+        )
+
+    def _makeFineTuningBiasVectors(self, n_modes, trial_modes, offsets):
+        bias_vectors = []
+
+        for mode_index in trial_modes:
+            for offset in offsets:
+                bias = np.zeros(n_modes, dtype=float)
+                bias[mode_index] = float(offset)
+                bias_vectors.append(bias)
+
+        return bias_vectors
+
+
+    def _randomFineTuningCoefficients(self, rng, n_modes, max_magnitude):
+        if n_modes < 1:
+            return np.zeros(0, dtype=np.float32)
+
+        direction = rng.normal(size=n_modes)
+        norm = np.linalg.norm(direction)
+
+        if norm == 0:
+            direction[0] = 1.0
+            norm = 1.0
+
+        radius = rng.uniform(0.0, max_magnitude)
+
+        return (direction / norm * radius).astype(np.float32)
+
+
+    def _nextFineTuningBatchIndex(self, x_dir, y_dir):
+        existing_indices = []
+
+        for folder in (x_dir, y_dir):
+            for filename in os.listdir(folder):
+                if not filename.startswith("batch_"):
+                    continue
+                if not filename.lower().endswith((".tif", ".tiff")):
+                    continue
+
+                stem = os.path.splitext(filename)[0]
+                try:
+                    existing_indices.append(int(stem.split("_")[-1]))
+                except ValueError:
+                    pass
+
+        if not existing_indices:
+            return 0
+
+        return max(existing_indices) + 1
 
     def set_system_flat(self, modes=None, actuator_values=None):
         # Set in cockpit user config

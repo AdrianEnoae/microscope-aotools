@@ -5,7 +5,7 @@ from microAO.gui.sensorlessViewer import ConventionalResultsViewer
 from microAO.gui.sensorlessParameters import routine_dialogs
 from microAO.gui.DMViewer import DMViewer
 from microAO.gui.roiSelector import ROISelectionDialog
-
+from microAO.gui.fineTuningCollection import fineTuningCollectionDialog
 import microAO.events
 import microAO.aoAlg
 from microAO.aoRoutines import routines
@@ -640,6 +640,10 @@ class MicroscopeAOCompositeDevicePanel(wx.Panel):
         sensorlessParametersButton = wx.Button(panel_AO, label="Set sensorless parameters")
         sensorlessParametersButton.Bind(wx.EVT_BUTTON, self.OnSetSensorlessParameters)
 
+        # Button to set MLAO data collection parameters
+        fineTuningCollectionButton = wx.Button(panel_AO, label="Fine Tuning Data Collection")
+        fineTuningCollectionButton.Bind(wx.EVT_BUTTON,self.OnFineTuningCollection)
+
         # Button to perform sensorless correction
         sensorlessAOButton = wx.Button(panel_AO, label="Sensorless AO")
         sensorlessAOButton.Bind(wx.EVT_BUTTON, self.OnSensorlessAO)
@@ -689,6 +693,7 @@ class MicroscopeAOCompositeDevicePanel(wx.Panel):
             metricSelectButton,
             roiSelectButton,
             sensorlessParametersButton,
+            fineTuningCollectionButton,
             sensorlessAOButton,
             correctionFittingButton
         ]:
@@ -1287,6 +1292,10 @@ class MicroscopeAOCompositeDevicePanel(wx.Panel):
         dlg = routine_dialogs[routine](self)
         dlg.ShowModal()
 
+    def OnFineTuningCollection(self, _) -> None:
+        with fineTuningCollectionDialog(self) as dlg:
+            dlg.ShowModal()
+            
     def OnDMViewer(self, event: wx.CommandEvent) -> None:
         # Try to find DM viewer window
         try:

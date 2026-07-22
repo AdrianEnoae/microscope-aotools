@@ -4,14 +4,13 @@ import typing
 import numpy as np
 from datetime import datetime
 import keras as k
-from microAO.aoMetrics import metric_function
 from microAO.aoAlg import AdaptiveOpticsFunctions
 import tifffile as tiff
 import os
 from microAO.pseudoPSF import pseudoPSF, make_pairs
 from microAO.aoMetrics import find_noise_level
 from scipy.signal.windows import tukey
-from skimage.restoration import denoise_wavelet,cycle_spin
+from skimage.restoration import denoise_wavelet,cycle_spin, rolling_ball
 
 
 
@@ -126,6 +125,12 @@ class ConventionalRoutine(Routine):
             sensorless_data["offset_index"]
         ]
 
+        #Apply defocus to counter spherical
+        if self.sensorless_params["spherical_focus_compensation_flag"] and self.sensorless_params["modes"][sensorless_data["mode_index"]].index_noll == 11:
+            new_modes[3] += self.sensorless_params["modes"][sensorless_data["mode_index"]].offsets[sensorless_data["offset_index"]]*1.8
+            #Empircially multiplying by a factor of 1.8 seems to work best
+
+
         # Update status message
         status_message = self._get_status_message(sensorless_data)
 
@@ -161,6 +166,14 @@ class ConventionalRoutine(Routine):
             )
             image_stack = sensorless_data["image_stack"][-modes.shape[0] :]
 
+            if self.sensorless_params["wavelet_denoising_flag"]:
+                for i, image in enumerate(image_stack):
+                    image=cycle_spin(image,denoise_wavelet,max_shifts=3,shift_steps=1,channel_axis=None, 
+                                        func_kw=dict(wavelet='sym2',channel_axis=None))
+                    
+                    #image=image-rolling_ball(image)
+                    image_stack[i]=image
+                    
 
             if self.sensorless_params["metric"]=='fourier' and self.sensorless_params['fourier_noise_level']==None:
                 self.sensorless_params['fourier_noise_level']=find_noise_level(
@@ -234,189 +247,10 @@ class ConventionalRoutine(Routine):
                 sensorless_data["offset_index"]
             ]
 
-            return_data.new_modes = new_modes
-
-        # If all data acquired, set completion flag
-        else:
-            return_data.done = True
-
-        return return_data
-
-    def _get_status_message(self, sensorless_data):
-        # Update status message
-        status_message = "Sensorless AO: image {n}/{N}, mode {n_mode}, meas. {n_meas}".format(
-            n = len(sensorless_data["image_stack"]) + 1,
-            N = sensorless_data["total_measurements"],
-            n_mode = self.sensorless_params["modes"][
-                sensorless_data["mode_index"]
-            ].index_noll,
-            n_meas = sensorless_data["offset_index"] + 1,
-        )
-
-        return status_message
-
-
-class ConventionalRoutineDenoising(Routine):
-    def name():
-        return "Conventional+Denoising"
-
-    @staticmethod
-    def defaults():
-        parameters = {
-            "num_reps": 1,
-            "NA": 1.3,
-            "wavelength": 600e-9,
-            "metric": 'fourier',
-            "modes": (
-                ConventionalParamsMode(11, np.linspace(-1.5, 1.5, 7)),
-                ConventionalParamsMode(5, np.linspace(-1.5, 1.5, 7)),
-                ConventionalParamsMode(6, np.linspace(-1.5, 1.5, 7)),
-                ConventionalParamsMode(7, np.linspace(-1.5, 1.5, 7)),
-                ConventionalParamsMode(8, np.linspace(-1.5, 1.5, 7)),
-                ConventionalParamsMode(9, np.linspace(-1.5, 1.5, 7)),
-                ConventionalParamsMode(10, np.linspace(-1.5, 1.5, 7)),
-            ),
-            "datapoint_z": None,
-            "save_as_datapoint": False,
-            "log_path": None,
-            'type': 'conventional'
-        }
-
-        return parameters
-
-    def setup(self, sensorless_data):
-        # Define additional data required for routine
-        total_measurements = sum([len(mode.offsets) for mode in self.sensorless_params["modes"]]) * self.sensorless_params["num_reps"]
-        additional_data = {
-            "total_measurements": total_measurements,
-            "mode_index": 0,
-            "offset_index": 0,
-            "correction_stack": []
-        }
-
-        # Merge additional data (note in-place merge of mutable dict)
-        sensorless_data.update(additional_data)
-
-        # Define the first correction to apply
-        new_modes = sensorless_data["corrections"].copy()
-        new_modes[
-            self.sensorless_params["modes"][sensorless_data["mode_index"]].index_noll
-            - 1
-        ] += self.sensorless_params["modes"][sensorless_data["mode_index"]].offsets[
-            sensorless_data["offset_index"]
-        ]
-
-        # Update status message
-        status_message = self._get_status_message(sensorless_data)
-
-        # Format return data
-        return_data = RoutineOutput(
-            sensorless_data = sensorless_data,
-            status = status_message,
-            new_modes = new_modes,
-        )
-
-        self.sensorless_params['fourier_noise_level']=None
-
-        return return_data
-
-    def process(self, sensorless_data):
-        return_data = {}
-
-        # Set default result
-        result = None
-
-        # Correct mode if enough measurements have been taken
-        if sensorless_data["offset_index"] == (
-            self.sensorless_params["modes"][sensorless_data["mode_index"]].offsets.shape[0]
-            - 1
-        ):
-            # Calculate required parameters
-            mode_index_noll_0 = (
-                self.sensorless_params["modes"][sensorless_data["mode_index"]].index_noll - 1
-            )
-            modes = (
-                sensorless_data["corrections"][mode_index_noll_0]
-                + self.sensorless_params["modes"][sensorless_data["mode_index"]].offsets
-            )
-            image_stack = sensorless_data["image_stack"][-modes.shape[0] :]
-
-
-            if self.sensorless_params["metric"]=='fourier' and self.sensorless_params['fourier_noise_level']==None:
-                self.sensorless_params['fourier_noise_level']=find_noise_level(
-                    image_stack[0],
-                    wavelength=self.sensorless_params["wavelength"],
-                    NA=self.sensorless_params["NA"],
-                    pixel_size=self.sensorless_params["pixel_size"]
-                    )
-
-            #HERE I CAN ADD DENOISING
-            print(f"BABABOOEY:{image_stack.shape}")
-            image_stack=cycle_spin(image_stack,denoise_wavelet,3,shift_steps=1,channel_axis=-1, 
-                                   func_kw=dict(wavelet='sym2',channel_axis=-1))
-
-            # Find aberration amplitudes and correct
-            peak, metrics, metric_diagnostics, failure_flag = AdaptiveOpticsFunctions.find_zernike_amp_sensorless(
-                image_stack=image_stack,
-                modes=modes,
-                metric_name=self.sensorless_params["metric"],
-                wavelength=self.sensorless_params["wavelength"],
-                NA=self.sensorless_params["NA"],
-                pixel_size=self.sensorless_params["pixel_size"],
-                fourier_noise_level=self.sensorless_params['fourier_noise_level']
-            )
-
-            # If a peak isn't found, set abort flag
-            if peak is not None:
-                # Set correction (and label) in return data
-                sensorless_data["corrections"][mode_index_noll_0] = peak[0]
-
-            # Append metrics to stack
-            sensorless_data["metrics_stack"].append(metrics.tolist())
-
-            # Append current correction
-            sensorless_data['correction_stack'].append(sensorless_data["corrections"].copy())
-
-            # Instantiate result
-            result = ConventionalResults(
-                metrics = metrics,
-                image_stack = image_stack,
-                metric_diagnostics = metric_diagnostics,
-                modes = modes,
-                mode_label = f"Z{mode_index_noll_0 + 1}",
-                peak = peak,
-                failure_flag=failure_flag
-            )
-
-            # Update indices
-            sensorless_data["offset_index"] = 0
-            sensorless_data["mode_index"] += 1
-            if sensorless_data["mode_index"] == len(self.sensorless_params["modes"]):
-                sensorless_data["mode_index"] = 0
-
-        else:
-            # Increment offset index
-            sensorless_data["offset_index"] += 1
-
-        # Update status message
-        status_message = self._get_status_message(sensorless_data)
-
-        # Format return data
-        return_data = RoutineOutput(
-            sensorless_data = sensorless_data,
-            status = status_message,
-            result = result
-        )
-
-        # Set next mode and return data, unless all measurements acquired
-        if len(sensorless_data["image_stack"]) < sensorless_data["total_measurements"]:
-            # Apply next set of modes
-            new_modes = sensorless_data["corrections"].copy()
-            new_modes[
-                self.sensorless_params["modes"][sensorless_data["mode_index"]].index_noll - 1
-            ] += self.sensorless_params["modes"][sensorless_data["mode_index"]].offsets[
-                sensorless_data["offset_index"]
-            ]
+            #Apply defocus to counter spherical
+            if self.sensorless_params["spherical_focus_compensation_flag"] and self.sensorless_params["modes"][sensorless_data["mode_index"]].index_noll == 11:
+                new_modes[3] += self.sensorless_params["modes"][sensorless_data["mode_index"]].offsets[sensorless_data["offset_index"]]*1.8 
+                #Empircially multiplying by a factor of 1.8 seems to work best
 
             return_data.new_modes = new_modes
 
@@ -438,10 +272,6 @@ class ConventionalRoutineDenoising(Routine):
         )
 
         return status_message
-
-
-
-
 
 class MLAOBase(Routine):
     @staticmethod
@@ -469,7 +299,6 @@ class MLAOBase(Routine):
         self.correction_modes = self.CORRECTION_MODES
         self.offsets          = list(self.OFFSETS)   
         self.pairs            = make_pairs(len(self.trial_modes) * len(self.offsets))
-
         # Initial correction
         self.initial_modes = sensorless_data["corrections"].copy()
         self.correction    = self.initial_modes.copy()
@@ -496,23 +325,32 @@ class MLAOBase(Routine):
             _, h, w = arr.shape
 
             _, h, w = arr.shape
-            pad_h = max(256 - h, 0)
-            pad_w = max(256 - w, 0)
-            if pad_h or pad_w:
-                arr = self._tukey_window(arr)
-                pad_top    = pad_h // 2
-                pad_bottom = pad_h - pad_top
-                pad_left   = pad_w // 2
-                pad_right  = pad_w - pad_left
-                arr = np.pad(arr,((0, 0),(pad_top, pad_bottom),(pad_left, pad_right)),
-                      mode='constant', constant_values=0)
+            
+            if h > 256:
+                start_h = (h - 256) // 2
+                end_h = start_h + 256
+            else:
+                start_h = 0
+                end_h = h
+            if w > 256:
+                start_w = (w - 256) // 2
+                end_w = start_w + 256
+            else:
+                start_w = 0
+                end_w = w
 
-
-            _, h, w = arr.shape
-            y0, x0 = (h - 256)//2, (w - 256)//2
-            arr = arr[:, y0:y0+256, x0:x0+256]
-
+            arr = arr[:, start_h:end_h, start_w:end_w]
             arr = self._tukey_window(arr)
+            
+            _, h, w = arr.shape
+            pad_h_before = (256 - h) // 2
+            pad_h_after = 256 - h - pad_h_before
+            pad_w_before = (256 - w) // 2
+            pad_w_after = 256 - w - pad_w_before
+            
+            arr = np.pad(arr,pad_width=((0, 0), (pad_h_before, pad_h_after), (pad_w_before, pad_w_after)),
+                         mode='constant',constant_values=0)
+
 
             # save raw stack
             outdir = os.path.join(os.path.expanduser("~"), "Desktop", "MLAO Image")
@@ -522,11 +360,10 @@ class MLAOBase(Routine):
             # prep for model
             shp = arr[0].shape
             proc = np.moveaxis(arr, 0, -1).reshape(1, shp[0], shp[1], -1).astype("float32")
-            mn, mx = proc.min(), proc.max()
-            proc = (proc - mn) / ((mx - mn) if mx != mn else 1e-8)
-
-            psf_stack = pseudoPSF(proc, self.trial_modes, self.pairs, mode=self.PSEUDO_MODE)
-            tiff.imwrite(os.path.join(outdir, "pseudoPSF_Stack.tif"), psf_stack)
+            print(proc.shape)
+            psf_stack = pseudoPSF(proc, self.pairs, mode=self.PSEUDO_MODE)
+            # save for debug
+            tiff.imwrite(os.path.join(outdir, "pseudoPSF_Stack.tif"), np.moveaxis(psf_stack,-1,1))
 
             raw   = self.model.predict(psf_stack)[0, :]
             new   = self.correction.copy()
@@ -590,7 +427,7 @@ class MLAOBase(Routine):
 
 
 class ML2NDefault(MLAOBase):
-    MODEL_PATH       = r'C:\microscope-aotools\models\Fullbias_Default_CorrectOrientation_32s32_savedmodel.h5'
+    MODEL_PATH       = r'C:\microscope-aotools\models\1rad_Z5Z11_default_conv4fc2_finetuned.h5'
     TRIAL_MODES      = [4, 5, 6, 7, 8, 9, 10]
     CORRECTION_MODES = TRIAL_MODES
     OFFSETS          = [1.0, -1.0]          
@@ -601,7 +438,7 @@ class ML2NDefault(MLAOBase):
 
 
 class ML2NWavelet(MLAOBase):
-    MODEL_PATH       = r'C:\microscope-aotools\models\Fullbias_WaveletSoft_CorrectOrientation_32s32_savedmodel.h5'
+    MODEL_PATH       = r'C:\microscope-aotools\models\1rad_Z5Z11_wavelet_conv4fc2_finetuned.h5'
     TRIAL_MODES      = [4, 5, 6, 7, 8, 9, 10]
     CORRECTION_MODES = TRIAL_MODES
     OFFSETS          = [1.0, -1.0]         
@@ -612,8 +449,8 @@ class ML2NWavelet(MLAOBase):
 
 
 class MLAstgDefault(MLAOBase):
-    MODEL_PATH       = r'C:\microscope-aotools\models\Astigmatism2_Default_CorrectOrientation_32s32_savedmodel.h5'
-    TRIAL_MODES      = [4, 5]
+    MODEL_PATH       = r'C:\microscope-aotools\models\Astigmatism_Default_CorrectOrientation_32s32_savedmodel.h5'
+    TRIAL_MODES      = [4]
     CORRECTION_MODES = [4, 5, 6, 7, 8, 9, 10]
     OFFSETS          = [1.0, -1.0]
     PSEUDO_MODE      = 'default'
@@ -623,8 +460,8 @@ class MLAstgDefault(MLAOBase):
 
 
 class MLAstgWavelet(MLAOBase):
-    MODEL_PATH       = r'C:\microscope-aotools\models\Astigmatism2_WaveletSoft_CorrectOrientation_32s32_savedmodel.h5'
-    TRIAL_MODES      = [4, 5]
+    MODEL_PATH       = r'C:\microscope-aotools\models\Astigmatism_WaveletSoft_CorrectOrientation_32s32_savedmodel.h5'
+    TRIAL_MODES      = [4]
     CORRECTION_MODES = [4, 5, 6, 7, 8, 9, 10]
     OFFSETS          = [1.0, -1.0]
     PSEUDO_MODE      = 'wavelet'

@@ -39,6 +39,12 @@ class ConventionalParametersDialog(wx.Dialog):
         self._textctrl_logpath = FileBrowseButton(panel, labelText="Log path:")
         self._checkbox_dp_save = wx.CheckBox(panel)
         self._checkbox_dp_save.SetValue(params["save_as_datapoint"])
+        self._checkbox_spherical_focus = wx.CheckBox(panel)
+        self._checkbox_spherical_focus.SetValue(
+        params.get("spherical_focus_compensation_flag", False))
+        self._checkbox_wavelet_denoising = wx.CheckBox(panel)
+        self._checkbox_wavelet_denoising.SetValue(
+        params.get("wavelet_denoising_flag", False))
 
         # Configure the font of the scan ranges' text control
         self._textctrl_ranges.SetFont(
@@ -150,6 +156,34 @@ class ConventionalParametersDialog(wx.Dialog):
                 wx.GBPosition(7, 0),
                 wx.GBSpan(1, 2),
                 wx.ALL | wx.EXPAND,
+                5
+            ),
+            (
+                wx.StaticText(panel, label="Apply spherical focus compensation?"),
+                wx.GBPosition(8, 0),
+                wx.GBSpan(1, 1),
+                wx.ALL,
+                5
+            ),
+            (
+                self._checkbox_spherical_focus,
+                wx.GBPosition(8, 1),
+                wx.GBSpan(1, 1),
+                wx.ALL,
+                5
+            ),
+            (
+                wx.StaticText(panel, label="Apply denoising?"),
+                wx.GBPosition(8, 2),
+                wx.GBSpan(1, 1),
+                wx.ALL,
+                5
+            ),
+            (
+                self._checkbox_wavelet_denoising,
+                wx.GBPosition(8, 3),
+                wx.GBSpan(1, 1),
+                wx.ALL,
                 5
             ),
         )
@@ -422,6 +456,12 @@ class ConventionalParametersDialog(wx.Dialog):
         self._device.sensorless_params["log_path"] = widgets_data[4][2]
         self._device.sensorless_params["save_as_datapoint"] = (
             self._checkbox_dp_save.GetValue()
+        )
+        self._device.sensorless_params["spherical_focus_compensation_flag"] = (
+            self._checkbox_spherical_focus.GetValue()
+        )
+        self._device.sensorless_params["wavelet_denoising_flag"] = (
+            self._checkbox_wavelet_denoising.GetValue()
         )
         # Propagate event
         event.Skip()

@@ -312,6 +312,9 @@ class _DiagnosticsPanelSecondMoment(_DiagnosticsPanelBase):
         # Update canvas
         self._canvas.draw()
 
+class _DiagnosticsPanelWavelet(_DiagnosticsPanelBase):
+    def _update_plot(self):
+        self._canvas.draw()
 
 _DIAGNOSTICS_PANEL_MAP = {
     "fourier": _DiagnosticsPanelFourier,
@@ -319,6 +322,8 @@ _DIAGNOSTICS_PANEL_MAP = {
     "fourier_power": _DiagnosticsPanelFourierPower,
     "gradient": _DiagnosticsPanelGradient,
     "second_moment": _DiagnosticsPanelSecondMoment,
+    "wavelet": _DiagnosticsPanelWavelet, #UPDATE THIS
+    "old_wavelet": _DiagnosticsPanelWavelet, #UPDATE THIS
 }
 
 @dataclasses.dataclass(frozen=True)
